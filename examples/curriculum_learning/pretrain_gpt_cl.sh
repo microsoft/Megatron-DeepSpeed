@@ -14,7 +14,8 @@ SEQLEN=1024
 ############################################################
 # New configs for curriculum learning, see README.md
 TRAIN_TOKENS=10_000_000_000
-LR_DECAY_TOKENS=$(($LR_DECAY_SAMPLES*$SEQLEN))
+# LR_DECAY_TOKENS=LR_DECAY_SAMPLES*SEQLEN
+LR_DECAY_TOKENS=130000000000
 ############################################################
 
 LOG_INTERVAL=100
