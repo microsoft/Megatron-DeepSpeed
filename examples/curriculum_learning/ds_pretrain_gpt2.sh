@@ -42,9 +42,6 @@ else
         exit 1
 fi
 
-# batch size per gpu
-BATCHSIZE=32
-
 # Pipeline parallelism. 1 means no pipelines.
 PP_SIZE=1
 
@@ -57,7 +54,9 @@ if [[ $PP_SIZE -gt 0 ]]; then
 else
     DP_SIZE=$(( ${NUM_GPUS} / ${MP_SIZE} ))
 fi
-GRAD_ACC_STEPS=$(( ${TOTAL_BATCHSIZE} / (${BATCHSIZE} * ${DP_SIZE}) ))
+# Batch size per gpu, here we assume grad accumulation step 1
+# you can reduce this if gpu OOM
+BATCHSIZE=$((TOTAL_BATCHSIZE/DP_SIZE))
 
 DATA_PATH=/vc_data/Megatron-LM/data/indexed_datasets/megatron
 VOCAB_PATH=/vc_data/Megatron-LM/data/gpt2-vocab.json
