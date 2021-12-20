@@ -405,9 +405,9 @@ class TransformerLanguageModel(MegatronModule):
         # similarity between two sequences by average pooling
         if not self.add_decoder or output_enc_hidden:
             if self.add_pooler and self.post_process:
-                return encoder_output, pooled_output, *moe_losses
+                return (encoder_output, pooled_output, *moe_losses)
             else:
-                return encoder_output, *moe_losses
+                return (encoder_output, *moe_losses)
 
         # Decoder Embedding
         dec_embedding_output = self.embedding(dec_input_ids,
@@ -421,9 +421,9 @@ class TransformerLanguageModel(MegatronModule):
                                       enc_dec_attn_mask=enc_dec_attn_mask)
 
         if self.add_pooler and self.post_process:
-            return decoder_output, encoder_output, pooled_output, *moe_losses
+            return (decoder_output, encoder_output, pooled_output, *moe_losses)
         else:
-            return decoder_output, encoder_output, *moe_losses
+            return (decoder_output, encoder_output, *moe_losses)
 
     def state_dict_for_save_checkpoint(self, destination=None, prefix='',
                                        keep_vars=False):

@@ -124,15 +124,15 @@ class GPTModel(MegatronModule):
             get_key_value=get_key_value)
 
         if self.post_process:
-            return post_language_model_processing(
+            return (post_language_model_processing(
                 lm_output, labels,
                 self.word_embeddings_weight(),
                 get_key_value,
                 self.parallel_output,
                 forward_method_parallel_output,
-                self.fp16_lm_cross_entropy), *moe_losses
+                self.fp16_lm_cross_entropy), *moe_losses)
         else:
-            return lm_output, *moe_losses
+            return (lm_output, *moe_losses)
 
     def state_dict_for_save_checkpoint(self, destination=None, prefix='',
                                        keep_vars=False):
