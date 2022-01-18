@@ -26,7 +26,7 @@ from megatron.model import LayerNorm
 from megatron.model.fused_softmax import FusedScaleMaskSoftmax
 from megatron.model.fused_bias_gelu import bias_gelu_impl
 from megatron.model.utils import attention_mask_func, openai_gelu, erf_gelu
-
+from torch import distributed as dist
 import deepspeed
 from deepspeed.moe.layer import MoE
 # flags required to enable jit fusion kernels
@@ -59,7 +59,7 @@ class ParallelMLP(MegatronModule):
     applied.
     """
 
-    def __init__(self, init_method, output_layer_init_method):
+    def __init__(self, init_method, output_layer_init_method, MOE=False, MoE_mp_size=1):
         super(ParallelMLP, self).__init__()
         args = get_args()
 
@@ -69,7 +69,9 @@ class ParallelMLP(MegatronModule):
             args.ffn_hidden_size,
             gather_output=False,
             init_method=init_method,
-            skip_bias_add=True)
+            skip_bias_add=True,
+            MOE=MOE,
+            MoE_mp_size=MoE_mp_size)
 
         self.bias_gelu_fusion = args.bias_gelu_fusion
         self.activation_func = F.gelu
@@ -84,7 +86,9 @@ class ParallelMLP(MegatronModule):
             args.hidden_size,
             input_is_parallel=True,
             init_method=output_layer_init_method,
-            skip_bias_add=True)
+            skip_bias_add=True,
+            MOE=MOE,
+            MoE_mp_size=MoE_mp_size)
 
 
     def forward(self, hidden_states):
@@ -102,7 +106,6 @@ class ParallelMLP(MegatronModule):
         # [s, b, h]
         output, output_bias = self.dense_4h_to_h(intermediate_parallel)
         return output, output_bias
-
 
 class ParallelAttention(MegatronModule):
     """Parallel self-attention layer abstract class.
@@ -360,6 +363,46 @@ class ParallelAttention(MegatronModule):
 
         return output, bias
 
+class Residual_MoE(MegatronModule):
+    def __init__(self, init_method, output_layer_init_method, num_experts=1, MOE=True, MoE_mp_size=1):
+        super(Residual_MoE, self).__init__()
+        args = get_args()
+
+        # simple large mlp
+        self.mlp = ParallelMLP(init_method, output_layer_init_method)
+        # MoE experts group
+        self.moe = MoE(args.hidden_size, ParallelMLP(init_method,
+                    output_layer_init_method=output_layer_init_method, MOE=MOE, MoE_mp_size=MoE_mp_size),
+                    num_experts=num_experts, k=args.topk,
+                    capacity_factor=args.moe_train_capacity_factor,
+                    eval_capacity_factor=args.moe_eval_capacity_factor,
+                    min_capacity=args.moe_min_capacity,
+                    drop_tokens=args.moe_token_dropping, use_tutel=args.use_tutel)
+
+        # Sum up coefficient: as we have two branches (MLP and EXPERT)
+        BRANCHES = 2
+        # Used for weighted sum of the outputs from MLP and Expert
+        self.coefficient = mpu.RowParallelLinear(
+            args.hidden_size,
+            BRANCHES,
+            input_is_parallel=True,
+            init_method=output_layer_init_method,
+            skip_bias_add=True,
+            bias=False, MOE=MOE, MoE_mp_size=1)
+
+        # Sum coefficient activation
+        self.coef_activation_func = F.softmax
+
+    def forward(self, hidden_states):
+        mlp_output, _  = self.mlp(hidden_states)
+        moe_output, moe_loss, _ = self.moe(hidden_states)
+
+        # Weighted sum
+        _coef, _ = self.coefficient(hidden_states)
+        coef = self.coef_activation_func(_coef, dim=-1)
+        output = coef[:, :, :1] * mlp_output + coef[:, :, 1:] * moe_output
+        return output, moe_loss, None
+
 
 def bias_dropout_add(x, bias, residual, prob, training):
     # type: (Tensor, Tensor, Tensor, float, bool) -> Tensor
@@ -445,13 +488,28 @@ class ParallelTransformerLayer(MegatronModule):
             self.mlp = ParallelMLP(init_method,
                                output_layer_init_method)
         else:
-            self.mlp = MoE(args.hidden_size, ParallelMLP(init_method,
-                output_layer_init_method=output_layer_init_method),
-                num_experts=self.num_experts, k=args.topk,
-                capacity_factor=args.moe_train_capacity_factor,
-                eval_capacity_factor=args.moe_eval_capacity_factor,
-                min_capacity=args.moe_min_capacity,
-                drop_tokens=args.moe_token_dropping, use_tutel=args.use_tutel)
+            if not args.ds_inference or self.num_experts > dist.get_world_size():
+                moe_mp_size = 1
+            else:
+                moe_mp_size = dist.get_world_size() // self.num_experts
+            if args.mlp_type == 'standard':
+                self.mlp = MoE(args.hidden_size,
+                              ParallelMLP(init_method,
+                                   output_layer_init_method=output_layer_init_method,
+                                   MOE=True,
+                                   MoE_mp_size=moe_mp_size),
+                              num_experts=self.num_experts, k=args.topk,
+                              capacity_factor=args.moe_train_capacity_factor,
+                              eval_capacity_factor=args.moe_eval_capacity_factor,
+                              min_capacity=args.moe_min_capacity,
+                              drop_tokens=args.moe_token_dropping, use_tutel=args.use_tutel)
+            elif args.mlp_type == 'residual':
+                self.mlp = Residual_MoE(init_method,
+                                     output_layer_init_method,
+                                     self.num_experts,
+                                     MoE_mp_size=moe_mp_size)
+            else:
+               raise ValueError(f"{args.mlp_type} is not a correct MLP type. Please use standard or residual")
 
     def forward(self, hidden_states, attention_mask,
                 encoder_output=None, enc_dec_attn_mask=None,
@@ -529,7 +587,7 @@ class ParallelTransformerLayer(MegatronModule):
             mlp_output, mlp_bias = self.mlp(layernorm_output)
         else:
             mlp_output, moe_loss, _ = self.mlp(layernorm_output)
-        
+
         # Second residual connection.
         if self.apply_residual_connection_post_layernorm:
             residual = layernorm_output
@@ -564,7 +622,7 @@ class ParallelTransformerLayerPipe(ParallelTransformerLayer):
        to the next stage in the pipeline.
 
        This version is useful if masks are dynamic.
-    
+
     2) forward(input, **kwargs) -> output
        When the mask is static over all samples, it is advantageous to
        cache the mask and avoid communicating it.
@@ -598,15 +656,17 @@ class ParallelTransformer(MegatronModule):
     def __init__(self, init_method, output_layer_init_method,
                  layer_type=LayerType.encoder,
                  self_attn_mask_type=AttnMaskType.padding,
-                 pre_process=True, post_process=True, num_experts=1):
+                 pre_process=True, post_process=True, num_experts=[1]):
+
         super(ParallelTransformer, self).__init__()
         args = get_args()
-
+    
         self.bf16 = args.bf16
         self.fp32_residual_connection = args.fp32_residual_connection
         self.pre_process = pre_process
         self.post_process = post_process
         self.input_tensor = None
+        self.ds_inference = args.ds_inference
 
         # Store activation checkpoiting flag.
         self.checkpoint_activations = args.checkpoint_activations
@@ -618,14 +678,15 @@ class ParallelTransformer(MegatronModule):
         self.num_layers = args.num_layers // mpu.get_pipeline_model_parallel_world_size()
 
         # Transformer layers.
-        def build_layer(layer_number):
+        def build_layer(layer_number, n_e):
             return ParallelTransformerLayer(
                 init_method,
                 output_layer_init_method,
                 layer_number,
                 layer_type=layer_type,
                 self_attn_mask_type=self_attn_mask_type,
-                num_experts=num_experts if layer_number % args.expert_interval == 0 else 1)
+                num_experts=n_e)
+
         if args.virtual_pipeline_model_parallel_size is not None:
             assert args.num_layers % args.virtual_pipeline_model_parallel_size == 0, \
                 'num_layers_per_stage must be divisible by ' \
@@ -647,9 +708,25 @@ class ParallelTransformer(MegatronModule):
         else:
             # Each stage gets a contiguous set of layers.
             offset = mpu.get_pipeline_model_parallel_rank() * self.num_layers
+            
+        assert len(num_experts) == 1 or len(num_experts) == self.num_layers // args.expert_interval, \
+        'num_experts must be either a single value or a list of the same length as the number of MoE layers'
 
-        self.layers = torch.nn.ModuleList(
-            [build_layer(i + 1 + offset) for i in range(self.num_layers)])
+        # Create the list of MoE experts
+        if len(num_experts) == 1:
+            num_experts = num_experts * (self.num_layers // args.expert_interval)
+
+        self.layers = []
+        # Build the layers
+        for i in range(self.num_layers):
+            layer_num = i + 1 + offset
+            if layer_num % args.expert_interval == 0:
+                n_e = num_experts[(layer_num-1) // args.expert_interval]
+            else:
+                n_e = 1
+            self.layers.append(build_layer(layer_num, n_e))
+
+        self.layers = torch.nn.ModuleList(self.layers)
 
         if self.post_process:
             # Final layer norm before output.
@@ -661,7 +738,6 @@ class ParallelTransformer(MegatronModule):
             global get_cuda_rng_tracker, checkpoint
             get_cuda_rng_tracker = deepspeed.checkpointing.get_cuda_rng_tracker
             checkpoint = deepspeed.checkpointing.checkpoint
-
     def _get_layer(self, layer_number):
         return self.layers[layer_number]
 
@@ -718,20 +794,23 @@ class ParallelTransformer(MegatronModule):
                 'get_key_value does not work with ' \
                 'activation checkpointing'
 
-        if self.pre_process:
-            # Data format change to avoid explicit tranposes : [b s h] --> [s b h].
-            # If the input flag for fp32 residual connection is set, convert for float.
-            if self.fp32_residual_connection:
-                hidden_states = hidden_states.transpose(0, 1).contiguous().float()
-            # Otherwise, leave it as is.
+        # Reza's note: DeepSpeed inference does not support transposes
+        if not self.ds_inference:
+            if self.pre_process:
+                # Data format change to avoid explicit tranposes : [b s h] --> [s b h].
+                # If the input flag for fp32 residual connection is set, convert for float.
+                if self.fp32_residual_connection:
+                    hidden_states = hidden_states.transpose(0, 1).contiguous().float()
+                # Otherwise, leave it as is.
+                else:
+                    hidden_states = hidden_states.transpose(0, 1).contiguous()
             else:
-                hidden_states = hidden_states.transpose(0, 1).contiguous()
-        else:
-            # See set_input_tensor()
-            hidden_states = self.input_tensor
+                # See set_input_tensor()
+                hidden_states = self.input_tensor
 
-        if encoder_output is not None:
-                encoder_output = encoder_output.transpose(0, 1).contiguous()
+            if encoder_output is not None:
+                 encoder_output = encoder_output.transpose(0, 1).contiguous()
+
         moe_losses = []
         if self.checkpoint_activations:
             hidden_states, moe_losses = self._checkpointed_forward(hidden_states,
@@ -746,21 +825,24 @@ class ParallelTransformer(MegatronModule):
                 past = None
                 if layer_past is not None:
                     past = layer_past[index]
-                hidden_states, moe_loss = layer(hidden_states,
+                hidden_states = layer(hidden_states,
                                       attention_mask,
                                       encoder_output=encoder_output,
                                       enc_dec_attn_mask=enc_dec_attn_mask,
                                       layer_past=past,
                                       get_key_value=get_key_value)
-                moe_losses.append(moe_loss)
+                if not self.ds_inference:
+                    hidden_states, moe_loss = hidden_states
+                    moe_losses.append(moe_loss)
                 if get_key_value:
                     hidden_states, present = hidden_states
                     presents.append(present)
 
         # Final layer norm.
         if self.post_process:
-            # Reverting data format change [s b h] --> [b s h].
-            hidden_states = hidden_states.transpose(0, 1).contiguous()
+            if not self.ds_inference:
+                # Reverting data format change [s b h] --> [b s h].
+                hidden_states = hidden_states.transpose(0, 1).contiguous()
             output = self.final_layernorm(hidden_states)
         else:
             output = hidden_states

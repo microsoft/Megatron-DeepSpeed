@@ -184,7 +184,6 @@ def setup_deepspeed_random_and_activation_checkpointing(args):
 def _initialize_distributed():
     """Initialize torch.distributed and mpu."""
     args = get_args()
-
     device_count = torch.cuda.device_count()
     if torch.distributed.is_initialized():
 
@@ -195,7 +194,6 @@ def _initialize_distributed():
         args.world_size = torch.distributed.get_world_size()
 
     else:
-
         if args.rank == 0:
             print('> initializing torch distributed ...', flush=True)
         # Manually set the device ids.
@@ -206,17 +204,22 @@ def _initialize_distributed():
                     'expected local-rank to be the same as rank % device-count.'
             else:
                 args.local_rank = device
-            torch.cuda.set_device(device)
+
+        torch.cuda.set_device(device) 
+
         # Call the init process
         init_method = 'tcp://'
         master_ip = os.getenv('MASTER_ADDR', 'localhost')
         master_port = os.getenv('MASTER_PORT', '6000')
         init_method += master_ip + ':' + master_port
-        torch.distributed.init_process_group(
-            backend=args.distributed_backend,
-            world_size=args.world_size, rank=args.rank,
-            init_method=init_method)
 
+        if args.deepspeed or args.ds_inference:
+            deepspeed.init_distributed()
+        else:
+            torch.distributed.init_process_group(
+                backend=args.distributed_backend,
+                world_size=args.world_size, rank=args.rank,
+                init_method=init_method)
     # Set the tensor model-parallel, pipeline model-parallel, and
     # data-parallel communicators.
     if device_count > 0:
@@ -229,7 +232,10 @@ def _initialize_distributed():
 
     # currently MoE model does not support pipeline parallel
     if args.deepspeed and args.no_pipeline_parallel:
-        groups.initialize(args.moe_expert_parallel_size, mpu)
+        if len(args.num_experts) == 1:
+            groups.initialize(args.moe_expert_parallel_size, mpu)
+        else:
+            groups.initialize(args.moe_expert_parallel_size, mpu, args.num_experts)
     if args.deepspeed and args.deepspeed_activation_checkpointing:
         setup_deepspeed_random_and_activation_checkpointing(args)
 
