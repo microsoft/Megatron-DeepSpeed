@@ -363,46 +363,6 @@ class ParallelAttention(MegatronModule):
 
         return output, bias
 
-class Residual_MoE(MegatronModule):
-    def __init__(self, init_method, output_layer_init_method, num_experts=1, MOE=True, MoE_mp_size=1):
-        super(Residual_MoE, self).__init__()
-        args = get_args()
-
-        # simple large mlp
-        self.mlp = ParallelMLP(init_method, output_layer_init_method)
-        # MoE experts group
-        self.moe = MoE(args.hidden_size, ParallelMLP(init_method,
-                    output_layer_init_method=output_layer_init_method, MOE=MOE, MoE_mp_size=MoE_mp_size),
-                    num_experts=num_experts, k=args.topk,
-                    capacity_factor=args.moe_train_capacity_factor,
-                    eval_capacity_factor=args.moe_eval_capacity_factor,
-                    min_capacity=args.moe_min_capacity,
-                    drop_tokens=args.moe_token_dropping, use_tutel=args.use_tutel)
-
-        # Sum up coefficient: as we have two branches (MLP and EXPERT)
-        BRANCHES = 2
-        # Used for weighted sum of the outputs from MLP and Expert
-        self.coefficient = mpu.RowParallelLinear(
-            args.hidden_size,
-            BRANCHES,
-            input_is_parallel=True,
-            init_method=output_layer_init_method,
-            skip_bias_add=True,
-            bias=False, MOE=MOE, MoE_mp_size=1)
-
-        # Sum coefficient activation
-        self.coef_activation_func = F.softmax
-
-    def forward(self, hidden_states):
-        mlp_output, _  = self.mlp(hidden_states)
-        moe_output, moe_loss, _ = self.moe(hidden_states)
-
-        # Weighted sum
-        _coef, _ = self.coefficient(hidden_states)
-        coef = self.coef_activation_func(_coef, dim=-1)
-        output = coef[:, :, :1] * mlp_output + coef[:, :, 1:] * moe_output
-        return output, moe_loss, None
-
 
 def bias_dropout_add(x, bias, residual, prob, training):
     # type: (Tensor, Tensor, Tensor, float, bool) -> Tensor
@@ -498,16 +458,27 @@ class ParallelTransformerLayer(MegatronModule):
                                    output_layer_init_method=output_layer_init_method,
                                    MOE=True,
                                    MoE_mp_size=moe_mp_size),
-                              num_experts=self.num_experts, k=args.topk,
+                              num_experts=self.num_experts, 
+                              ep_size=args.moe_expert_parallel_size,
+                              k=args.topk,
                               capacity_factor=args.moe_train_capacity_factor,
                               eval_capacity_factor=args.moe_eval_capacity_factor,
                               min_capacity=args.moe_min_capacity,
                               drop_tokens=args.moe_token_dropping, use_tutel=args.use_tutel)
             elif args.mlp_type == 'residual':
-                self.mlp = Residual_MoE(init_method,
-                                     output_layer_init_method,
-                                     self.num_experts,
-                                     MoE_mp_size=moe_mp_size)
+                self.mlp = MoE(args.hidden_size,
+                              ParallelMLP(init_method,
+                                   output_layer_init_method=output_layer_init_method,
+                                   MOE=True,
+                                   MoE_mp_size=moe_mp_size),
+                              num_experts=self.num_experts, 
+                              ep_size=args.moe_expert_parallel_size,
+                              k=args.topk,
+                              use_residual=True,
+                              capacity_factor=args.moe_train_capacity_factor,
+                              eval_capacity_factor=args.moe_eval_capacity_factor,
+                              min_capacity=args.moe_min_capacity,
+                              drop_tokens=args.moe_token_dropping, use_tutel=args.use_tutel)
             else:
                raise ValueError(f"{args.mlp_type} is not a correct MLP type. Please use standard or residual")
 
