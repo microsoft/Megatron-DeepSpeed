@@ -452,35 +452,20 @@ class ParallelTransformerLayer(MegatronModule):
                 moe_mp_size = 1
             else:
                 moe_mp_size = dist.get_world_size() // self.num_experts
-            if args.mlp_type == 'standard':
-                self.mlp = MoE(args.hidden_size,
-                              ParallelMLP(init_method,
-                                   output_layer_init_method=output_layer_init_method,
-                                   MOE=True,
-                                   MoE_mp_size=moe_mp_size),
-                              num_experts=self.num_experts, 
-                              ep_size=args.moe_expert_parallel_size,
-                              k=args.topk,
-                              capacity_factor=args.moe_train_capacity_factor,
-                              eval_capacity_factor=args.moe_eval_capacity_factor,
-                              min_capacity=args.moe_min_capacity,
-                              drop_tokens=args.moe_token_dropping, use_tutel=args.use_tutel)
-            elif args.mlp_type == 'residual':
-                self.mlp = MoE(args.hidden_size,
-                              ParallelMLP(init_method,
-                                   output_layer_init_method=output_layer_init_method,
-                                   MOE=True,
-                                   MoE_mp_size=moe_mp_size),
-                              num_experts=self.num_experts, 
-                              ep_size=args.moe_expert_parallel_size,
-                              k=args.topk,
-                              use_residual=True,
-                              capacity_factor=args.moe_train_capacity_factor,
-                              eval_capacity_factor=args.moe_eval_capacity_factor,
-                              min_capacity=args.moe_min_capacity,
-                              drop_tokens=args.moe_token_dropping, use_tutel=args.use_tutel)
-            else:
-               raise ValueError(f"{args.mlp_type} is not a correct MLP type. Please use standard or residual")
+            
+            self.mlp = MoE(args.hidden_size,
+                            ParallelMLP(init_method,
+                                output_layer_init_method=output_layer_init_method,
+                                MOE=True,
+                                MoE_mp_size=moe_mp_size),
+                            num_experts=self.num_experts, 
+                            ep_size=args.moe_expert_parallel_size,
+                            k=args.topk,
+                            use_residual=(args.mlp_type == 'residual'),
+                            capacity_factor=args.moe_train_capacity_factor,
+                            eval_capacity_factor=args.moe_eval_capacity_factor,
+                            min_capacity=args.moe_min_capacity,
+                            drop_tokens=args.moe_token_dropping, use_tutel=args.use_tutel)
 
     def forward(self, hidden_states, attention_mask,
                 encoder_output=None, enc_dec_attn_mask=None,
