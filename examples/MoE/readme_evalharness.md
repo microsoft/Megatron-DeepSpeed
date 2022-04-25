@@ -14,7 +14,8 @@ Get lm-eval harness (https://github.com/EleutherAI/lm-evaluation-harness) and `b
 ```
 (maybe need pip install --upgrade pip)
 pip install best-download==0.0.7
-pip install git+https://github.com/EleutherAI/lm-evaluation-harness
+pip install lm-eval
+(previously we used "pip install git+https://github.com/EleutherAI/lm-evaluation-harness" to install, but later found the command above has less dependency issues)
 ```
 
 2. Pre-download needed datasets
