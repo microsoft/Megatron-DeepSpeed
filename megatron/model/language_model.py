@@ -15,7 +15,6 @@
 
 """Transformer based language model."""
 
-from json import encoder
 import torch
 import torch.nn.functional as F
 

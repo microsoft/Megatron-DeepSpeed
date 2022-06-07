@@ -1,3 +1,6 @@
+# This code is originally from https://github.com/bigscience-workshop/Megatron-DeepSpeed
+# under the license https://huggingface.co/spaces/bigscience/license
+
 from functools import reduce
 from logging import logMultiprocessing
 import os

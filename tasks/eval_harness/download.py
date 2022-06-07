@@ -1,3 +1,6 @@
+# This code is originally from https://github.com/bigscience-workshop/Megatron-DeepSpeed
+# under the license https://huggingface.co/spaces/bigscience/license
+
 # Downloads the specified taks in the evaluation harness
 # This is particularly useful when running in environments where the GPU nodes 
 # do not have internet access. This way we can pre-download them and use the cached data-set during evaluation.
