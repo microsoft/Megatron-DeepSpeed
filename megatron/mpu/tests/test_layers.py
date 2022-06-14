@@ -21,6 +21,7 @@ import mpu
 from torch.nn.parameter import Parameter
 import torch.nn.init as init
 import torch
+import deepspeed
 import random
 import sys
 sys.path.append("../..")
@@ -28,7 +29,7 @@ sys.path.append("../..")
 
 def test_parallel_embedding(tensor_model_parallel_size):
 
-    if torch.distributed.get_rank() == 0:
+    if deepspeed.comm.get_rank() == 0:
         print('> testing parallel embedding with model parallel size {} ...'.
               format(tensor_model_parallel_size))
 
@@ -67,16 +68,16 @@ def test_parallel_embedding(tensor_model_parallel_size):
     loss_vocab_parallel = torch.mul(output, loss_weight).sum()
     loss_vocab_parallel.backward()
 
-    torch.distributed.barrier()
+    deepspeed.comm.barrier()
     error = loss_parallel.sub(loss_original).abs()
     print('   error in loss (parallel) on global rank {}: {}'.format(
-        torch.distributed.get_rank(), error))
+        deepspeed.comm.get_rank(), error))
     assert error < 1.0e-12, 'error: {}'.format(error)
 
-    torch.distributed.barrier()
+    deepspeed.comm.barrier()
     error = loss_vocab_parallel.sub(loss_original).abs()
     print('   error in loss (vocab parallel) on global rank {}: {}'.format(
-        torch.distributed.get_rank(), error))
+        deepspeed.comm.get_rank(), error))
     assert error < 1.0e-12, 'error: {}'.format(error)
 
     weight_grad_orig = torch.split(embedding_original.weight.grad,
@@ -84,7 +85,7 @@ def test_parallel_embedding(tensor_model_parallel_size):
                                    1)[mpu.get_tensor_model_parallel_rank()]
     error = embedding_parallel.weight.grad.sub(weight_grad_orig).abs().max()
     print('   error in grad (parallel) on global rank {}: {}'.format(
-        torch.distributed.get_rank(), error))
+        deepspeed.comm.get_rank(), error))
     assert error < 1.0e-12, 'error: {}'.format(error)
 
     weight_grad_orig = torch.split(embedding_original.weight.grad,
@@ -93,21 +94,21 @@ def test_parallel_embedding(tensor_model_parallel_size):
     error = embedding_vocab_parallel.weight.grad.sub(
         weight_grad_orig).abs().max()
     print('   error in grad (vocab parallel) on global rank {}: {}'.format(
-        torch.distributed.get_rank(), error))
+        deepspeed.comm.get_rank(), error))
     assert error < 1.0e-12, 'error: {}'.format(error)
 
     # Reset groups
     mpu.destroy_model_parallel()
 
-    torch.distributed.barrier()
-    if torch.distributed.get_rank() == 0:
+    deepspeed.comm.barrier()
+    if deepspeed.comm.get_rank() == 0:
         print('>> passed the test :-)')
 
 
 def test_initialize_affine_weight(tensor_model_parallel_size):
 
     mpu.initialize_model_parallel(tensor_model_parallel_size)
-    if torch.distributed.get_rank() == 0:
+    if deepspeed.comm.get_rank() == 0:
         print('> testing initialize_affine_weight with model parallel '
               'size: {}'.format(tensor_model_parallel_size))
     tensor_model_parallel_size = mpu.get_tensor_model_parallel_world_size()
@@ -137,9 +138,9 @@ def test_initialize_affine_weight(tensor_model_parallel_size):
 
     # Compare.
     error = weight.sub(my_weight).abs().max()
-    torch.distributed.barrier()
+    deepspeed.comm.barrier()
     print('   column parallel max error (should be zero) on global rank '
-          '{}: {}'.format(torch.distributed.get_rank(), error))
+          '{}: {}'.format(deepspeed.comm.get_rank(), error))
     assert error < 1.0e-6
 
     # ------------
@@ -160,16 +161,16 @@ def test_initialize_affine_weight(tensor_model_parallel_size):
 
     # Compare.
     error = weight.sub(my_weight).abs().max()
-    torch.distributed.barrier()
+    deepspeed.comm.barrier()
     print('   row parallel max error (should be zero) on global rank '
-          '{}: {}'.format(torch.distributed.get_rank(), error))
+          '{}: {}'.format(deepspeed.comm.get_rank(), error))
     assert error < 1.0e-6
 
     # Reset groups
     mpu.destroy_model_parallel()
 
-    torch.distributed.barrier()
-    if torch.distributed.get_rank() == 0:
+    deepspeed.comm.barrier()
+    if deepspeed.comm.get_rank() == 0:
         print(' >> passed the test :-)')
 
 
@@ -186,7 +187,7 @@ class IdentityLayer2D(torch.nn.Module):
 def test_column_parallel_linear(tensor_model_parallel_size):
 
     mpu.initialize_model_parallel(tensor_model_parallel_size)
-    if torch.distributed.get_rank() == 0:
+    if deepspeed.comm.get_rank() == 0:
         print('> testing ColumnParallelLinear with model parallel '
               'size: {}'.format(tensor_model_parallel_size))
     tensor_model_parallel_size = mpu.get_tensor_model_parallel_world_size()
@@ -223,37 +224,37 @@ def test_column_parallel_linear(tensor_model_parallel_size):
     my_dLdA = torch.split(dLdA, output_size_coeff,
                           dim=0)[rank].contiguous().clone()
     error = my_dLdA.sub(linear_layer.weight.grad).abs().max()
-    torch.distributed.barrier()
+    deepspeed.comm.barrier()
     print('   error in dLdA on global rank {}: {}'.format(
-        torch.distributed.get_rank(), error))
+        deepspeed.comm.get_rank(), error))
     assert error < 1.0e-6
 
     my_dLdb = torch.split(dLdb, output_size_coeff,
                           dim=0)[rank].contiguous().clone()
     error = my_dLdb.sub(linear_layer.bias.grad).abs().max()
-    torch.distributed.barrier()
+    deepspeed.comm.barrier()
     print('   error in dLdb on global rank {}: {}'.format(
-        torch.distributed.get_rank(), error))
+        deepspeed.comm.get_rank(), error))
     assert error < 1.0e-6
 
     error = dLdX.sub(identity_layer.weight.grad).abs().max()
-    torch.distributed.barrier()
+    deepspeed.comm.barrier()
     print('   error in dLdX on global rank {}: {}'.format(
-        torch.distributed.get_rank(), error))
+        deepspeed.comm.get_rank(), error))
     assert error < 1.0e-6
 
     # Reset groups
     mpu.destroy_model_parallel()
 
-    torch.distributed.barrier()
-    if torch.distributed.get_rank() == 0:
+    deepspeed.comm.barrier()
+    if deepspeed.comm.get_rank() == 0:
         print(' >> passed the test :-)')
 
 
 def test_row_parallel_linear(tensor_model_parallel_size):
 
     mpu.initialize_model_parallel(tensor_model_parallel_size)
-    if torch.distributed.get_rank() == 0:
+    if deepspeed.comm.get_rank() == 0:
         print('> testing RowParallelLinear with model parallel '
               'size: {}'.format(tensor_model_parallel_size))
     tensor_model_parallel_size = mpu.get_tensor_model_parallel_world_size()
@@ -290,28 +291,28 @@ def test_row_parallel_linear(tensor_model_parallel_size):
     my_dLdA = torch.split(dLdA, input_size_coeff,
                           dim=1)[rank].contiguous().clone()
     error = my_dLdA.sub(linear_layer.weight.grad).abs().max()
-    torch.distributed.barrier()
+    deepspeed.comm.barrier()
     print('   error in dLdA on global rank {}: {}'.format(
-        torch.distributed.get_rank(), error))
+        deepspeed.comm.get_rank(), error))
     assert error < 1.0e-6
 
     error = dLdb.sub(linear_layer.bias.grad).abs().max()
-    torch.distributed.barrier()
+    deepspeed.comm.barrier()
     print('   error in dLdb on global rank {}: {}'.format(
-        torch.distributed.get_rank(), error))
+        deepspeed.comm.get_rank(), error))
     assert error < 1.0e-6
 
     error = dLdX.sub(identity_layer.weight.grad).abs().max()
-    torch.distributed.barrier()
+    deepspeed.comm.barrier()
     print('   error in dLdX on global rank {}: {}'.format(
-        torch.distributed.get_rank(), error))
+        deepspeed.comm.get_rank(), error))
     assert error < 1.0e-6
 
     # Reset groups
     mpu.destroy_model_parallel()
 
-    torch.distributed.barrier()
-    if torch.distributed.get_rank() == 0:
+    deepspeed.comm.barrier()
+    if deepspeed.comm.get_rank() == 0:
         print(' >> passed the test :-)')
 
 
@@ -335,7 +336,7 @@ def parallel_self_attention(tensor_model_parallel_size, num_att_heads_per_partit
     set_random_seed(seed)
 
     num_att_heads = num_att_heads_per_partition * \
-        torch.distributed.get_world_size()
+        deepspeed.comm.get_world_size()
     hidden_size = hidden_size_per_att_head * num_att_heads
 
     # Network
@@ -360,7 +361,7 @@ def parallel_self_attention(tensor_model_parallel_size, num_att_heads_per_partit
 
 def test_parallel_self_attention(tensor_model_parallel_size):
 
-    if torch.distributed.get_rank() == 0:
+    if deepspeed.comm.get_rank() == 0:
         print('> testing ParallelSelfAttention with model parallel '
               'size: {}'.format(tensor_model_parallel_size))
 
@@ -382,9 +383,9 @@ def test_parallel_self_attention(tensor_model_parallel_size):
     assert hideen_size_1 == hidden_size
 
     error = loss_1.sub(loss).abs().max()
-    torch.distributed.barrier()
+    deepspeed.comm.barrier()
     print('   loss error on global rank {}: {}'.format(
-        torch.distributed.get_rank(), error))
+        deepspeed.comm.get_rank(), error))
     assert error < 5.0e-6
 
     my_lin_grad_list = torch.split(
@@ -393,20 +394,20 @@ def test_parallel_self_attention(tensor_model_parallel_size):
     my_lin_grad = torch.cat(my_lin_grad_list, dim=0)
     error = my_lin_grad.sub(
         attention_layer.query_key_value.weight.grad).abs().max()
-    torch.distributed.barrier()
+    deepspeed.comm.barrier()
     print('   weight gradient error on global rank {}: {}'.format(
-        torch.distributed.get_rank(), error))
+        deepspeed.comm.get_rank(), error))
     assert error < 5.0e-6
 
     error = identity_layer_1.weight.grad.sub(
         identity_layer.weight.grad).abs().max()
-    torch.distributed.barrier()
+    deepspeed.comm.barrier()
     print('   input gradient error on global rank {}: {}'.format(
-        torch.distributed.get_rank(), error))
+        deepspeed.comm.get_rank(), error))
     assert error < 5.0e-6
 
-    torch.distributed.barrier()
-    if torch.distributed.get_rank() == 0:
+    deepspeed.comm.barrier()
+    if deepspeed.comm.get_rank() == 0:
         print(' >> passed the test :-)')
 
 
@@ -420,7 +421,7 @@ def parallel_transformer(tensor_model_parallel_size, num_att_heads_per_partition
     set_random_seed(seed)
 
     num_att_heads = num_att_heads_per_partition * \
-        torch.distributed.get_world_size()
+        deepspeed.comm.get_world_size()
     hidden_size = hidden_size_per_att_head * num_att_heads
     intermediate_size = 4 * hidden_size
 
@@ -448,7 +449,7 @@ def parallel_transformer(tensor_model_parallel_size, num_att_heads_per_partition
 
 def test_parallel_transformer_layer(tensor_model_parallel_size):
 
-    if torch.distributed.get_rank() == 0:
+    if deepspeed.comm.get_rank() == 0:
         print('> testing ParallelTransformerLayer with model parallel '
               'size: {}'.format(tensor_model_parallel_size))
 
@@ -468,20 +469,20 @@ def test_parallel_transformer_layer(tensor_model_parallel_size):
             hidden_size_per_att_head, batch_size, sequence_length)
 
     error = loss_1.sub(loss).abs().max()
-    torch.distributed.barrier()
+    deepspeed.comm.barrier()
     print('   loss error on global rank {}: {}'.format(
-        torch.distributed.get_rank(), error))
+        deepspeed.comm.get_rank(), error))
     assert error < 5.0e-5, 'error: {}'.format(error)
 
     error = identity_layer_1.weight.grad.sub(
         identity_layer.weight.grad).abs().max()
-    torch.distributed.barrier()
+    deepspeed.comm.barrier()
     print('   input gradient error on global rank {}: {}'.format(
-        torch.distributed.get_rank(), error))
+        deepspeed.comm.get_rank(), error))
     assert error < 5.0e-5, 'error: {}'.format(error)
 
-    torch.distributed.barrier()
-    if torch.distributed.get_rank() == 0:
+    deepspeed.comm.barrier()
+    if deepspeed.comm.get_rank() == 0:
         print(' >> passed the test :-)')
 
 
@@ -491,7 +492,7 @@ if __name__ == '__main__':
     torch.backends.cudnn.benchmark = False
 
     initialize_distributed()
-    world_size = torch.distributed.get_world_size()
+    world_size = deepspeed.comm.get_world_size()
 
     print_separator('test initialize affine weight')
     tensor_model_parallel_size = 1

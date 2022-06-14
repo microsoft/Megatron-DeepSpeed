@@ -14,6 +14,7 @@
 # limitations under the License.
 
 import torch
+import deepspeed
 
 from .initialize import get_tensor_model_parallel_group, get_tensor_model_parallel_world_size, get_tensor_model_parallel_rank
 from .utils import split_tensor_along_last_dim
@@ -27,7 +28,7 @@ def _reduce(input_):
         return input_
 
     # All-reduce.
-    torch.distributed.all_reduce(input_, group=get_tensor_model_parallel_group())
+    deepspeed.comm.all_reduce(input_, group=get_tensor_model_parallel_group())
 
     return input_
 
@@ -65,7 +66,7 @@ def _gather(input_):
 
     tensor_list = [torch.empty_like(input_) for _ in range(world_size)]
     tensor_list[rank] = input_
-    torch.distributed.all_gather(tensor_list, input_, group=get_tensor_model_parallel_group())
+    deepspeed.comm.all_gather(tensor_list, input_, group=get_tensor_model_parallel_group())
 
     # Note: torch.cat already creates a contiguous tensor.
     output = torch.cat(tensor_list, dim=last_dim).contiguous()

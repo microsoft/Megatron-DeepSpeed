@@ -23,6 +23,7 @@ import torch
 from torch import _C
 from torch.cuda import _lazy_call, device as device_ctx_manager
 from torch.utils.checkpoint import detach_variable
+import deepspeed
 
 from megatron import get_args
 from megatron.memory import allocate_mem_buff
@@ -119,7 +120,7 @@ def gather_split_1d_tensor(tensor):
                            device=torch.cuda.current_device(),
                            requires_grad=False)
     chunks = [gathered[i*numel:(i+1)*numel] for i in range(world_size)]
-    torch.distributed.all_gather(chunks, tensor,
+    deepspeed.comm.all_gather(chunks, tensor,
                                  group=get_tensor_model_parallel_group())
     return gathered
 
@@ -228,11 +229,11 @@ def model_parallel_cuda_manual_seed(seed):
     # Data parallel gets the original seed.
     data_parallel_seed = seed
 
-    if torch.distributed.get_rank() == 0:
+    if deepspeed.comm.get_rank() == 0:
         print('> initializing model parallel cuda seeds on global rank {}, '
               'model parallel rank {}, and data parallel rank {} with '
               'model parallel seed: {} and data parallel seed: {}'.format(
-                  torch.distributed.get_rank(), get_tensor_model_parallel_rank(),
+                  deepspeed.comm.get_rank(), get_tensor_model_parallel_rank(),
                   get_data_parallel_rank(), tensor_model_parallel_seed,
                   data_parallel_seed), flush=True)
     _CUDA_RNG_STATE_TRACKER.reset()

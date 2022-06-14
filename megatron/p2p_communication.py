@@ -35,7 +35,7 @@ def _communicate(tensor_send_next, tensor_send_prev, recv_prev, recv_next,
                    previous rank.
         recv_next: boolean for whether tensor should be received from
                    next rank.
-        use_ring_exchange: boolean for whether torch.distributed.ring_exchange()
+        use_ring_exchange: boolean for whether deepspeed.comm.ring_exchange()
                            API should be used.
 
     Returns:

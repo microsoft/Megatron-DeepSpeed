@@ -19,6 +19,7 @@ import time
 
 import numpy as np
 import torch
+import deepspeed
 
 from megatron import print_rank_0
 from megatron import mpu
@@ -53,7 +54,7 @@ class BlendableDataset(torch.utils.data.Dataset):
         helpers.build_blending_indices(self.dataset_index,
                                        self.dataset_sample_index,
                                        weights, num_datasets, self.size,
-                                       torch.distributed.get_rank() == 0)
+                                       deepspeed.comm.get_rank() == 0)
         print_rank_0('> elapsed time for building blendable dataset indices: '
                      '{:.2f} (sec)'.format(time.time() - start_time))
 

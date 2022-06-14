@@ -17,7 +17,7 @@
 import math
 
 import torch
-import torch.distributed as dist
+import deepspeed.comm as dist
 import torch.nn.functional as F
 
 from megatron import get_args
@@ -43,8 +43,8 @@ def pretrain_ict_model_provider():
 def get_group_world_size_rank():
 
     group = mpu.get_data_parallel_group()
-    rank = torch.distributed.get_rank(group=group)
-    world_size = torch.distributed.get_world_size(group=group)
+    rank = deepspeed.comm.get_rank(group=group)
+    world_size = deepspeed.comm.get_world_size(group=group)
 
     return group, rank, world_size
 
@@ -58,7 +58,7 @@ class AllgatherFromDataParallelRegion(torch.autograd.Function):
 
         tensor_list = [torch.empty_like(input_) for _ in range(world_size)]
         tensor_list[rank] = input_
-        torch.distributed.all_gather(tensor_list, input_, group=group)
+        deepspeed.comm.all_gather(tensor_list, input_, group=group)
 
         output = torch.cat(tensor_list, dim=0).contiguous()
 

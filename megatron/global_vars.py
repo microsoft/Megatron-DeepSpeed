@@ -20,6 +20,7 @@ import sys
 import time
 
 import torch
+import deepspeed
 
 from megatron.tokenizer import build_tokenizer
 from .arguments import parse_args
@@ -254,9 +255,9 @@ class Timers:
             elapsed_time = self.timers[name].elapsed(
                 reset=reset) * 1000.0 / normalizer
             string += ' | {}: {:.2f}'.format(name, elapsed_time)
-        if torch.distributed.is_initialized():
-            if torch.distributed.get_rank() == (
-                    torch.distributed.get_world_size() - 1):
+        if deepspeed.comm.is_initialized():
+            if deepspeed.comm.get_rank() == (
+                    deepspeed.comm.get_world_size() - 1):
                 print(string, flush=True)
         else:
             print(string, flush=True)

@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import torch
+import deepspeed
 
 from .package_info import (
     __description__,
@@ -37,19 +38,19 @@ from .initialize  import initialize_megatron
 
 def print_rank_0(message):
     """If distributed is initialized, print only on rank 0."""
-    if torch.distributed.is_initialized():
-        if torch.distributed.get_rank() == 0:
+    if deepspeed.comm.is_initialized():
+        if deepspeed.comm.get_rank() == 0:
             print(message, flush=True)
     else:
         print(message, flush=True)
 
 def is_last_rank():
-    return torch.distributed.get_rank() == (
-        torch.distributed.get_world_size() - 1)
+    return deepspeed.comm.get_rank() == (
+        deepspeed.comm.get_world_size() - 1)
 
 def print_rank_last(message):
     """If distributed is initialized, print only on last rank."""
-    if torch.distributed.is_initialized():
+    if deepspeed.comm.is_initialized():
         if is_last_rank():
             print(message, flush=True)
     else:

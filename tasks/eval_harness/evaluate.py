@@ -20,6 +20,7 @@ import numpy as np
 import time
 
 import torch
+import deepspeed
 from megatron import get_args
 from megatron import print_rank_0
 from megatron import get_tokenizer
@@ -346,7 +347,7 @@ def load_ds_checkpoint_and_setup_megatron(extra_args_provider):
     megatron.global_vars._GLOBAL_ARGS = args
 
     initialize_megatron()
-    torch.distributed.barrier()
+    deepspeed.comm.barrier()
 
     # Initializing megatron will update eg. tokenizer size. Override again.
     override_args(args, cp_args, skip_keys, skip_if_specified)
@@ -384,7 +385,7 @@ def load_ds_checkpoint_and_setup_megatron(extra_args_provider):
     if args.eval_fp32:
         model = model.float()
 
-    torch.distributed.barrier()
+    deepspeed.comm.barrier()
     return model
 
 def tasks_args(parser):

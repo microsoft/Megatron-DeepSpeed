@@ -19,6 +19,7 @@
 import torch
 
 from .utils import ensure_divisibility
+import deepspeed
 
 
 # Intra-layer model parallel group that the current rank belongs to.
@@ -76,14 +77,14 @@ def initialize_model_parallel(tensor_model_parallel_size_=1,
     with a total of 16 GPUs, rank 0 to 7 belong to the first box and
     ranks 8 to 15 belong to the second box.
     """
-    if torch.distributed.get_rank() == 0:
+    if deepspeed.comm.get_rank() == 0:
         print('> initializing tensor model parallel with size {}'.format(
             tensor_model_parallel_size_))
         print('> initializing pipeline model parallel with size {}'.format(
             pipeline_model_parallel_size_))
     # Get world size and rank. Ensure some consistencies.
-    assert torch.distributed.is_initialized()
-    world_size = torch.distributed.get_world_size()
+    assert deepspeed.comm.is_initialized()
+    world_size = deepspeed.comm.get_world_size()
     tensor_model_parallel_size = min(tensor_model_parallel_size_, world_size)
     pipeline_model_parallel_size = min(pipeline_model_parallel_size_, world_size)
     ensure_divisibility(world_size,
@@ -101,7 +102,7 @@ def initialize_model_parallel(tensor_model_parallel_size_=1,
         _VIRTUAL_PIPELINE_MODEL_PARALLEL_RANK = 0
         _VIRTUAL_PIPELINE_MODEL_PARALLEL_WORLD_SIZE = virtual_pipeline_model_parallel_size_
 
-    rank = torch.distributed.get_rank()
+    rank = deepspeed.comm.get_rank()
 
     # Build the data-parallel groups.
     global _DATA_PARALLEL_GROUP
@@ -115,7 +116,7 @@ def initialize_model_parallel(tensor_model_parallel_size_=1,
             ranks = range(start_rank + j, end_rank,
                           tensor_model_parallel_size)
             all_data_parallel_group_ranks.append(list(ranks))
-            group = torch.distributed.new_group(ranks)
+            group = deepspeed.comm.new_group(ranks)
             if rank in ranks:
                 _DATA_PARALLEL_GROUP = group
 
@@ -126,7 +127,7 @@ def initialize_model_parallel(tensor_model_parallel_size_=1,
     for i in range(data_parallel_size):
         ranks = [data_parallel_group_ranks[i]
                  for data_parallel_group_ranks in all_data_parallel_group_ranks]
-        group = torch.distributed.new_group(ranks)
+        group = deepspeed.comm.new_group(ranks)
         if rank in ranks:
             _MODEL_PARALLEL_GROUP = group
 
@@ -137,7 +138,7 @@ def initialize_model_parallel(tensor_model_parallel_size_=1,
     for i in range(num_tensor_model_parallel_groups):
         ranks = range(i * tensor_model_parallel_size,
                       (i + 1) * tensor_model_parallel_size)
-        group = torch.distributed.new_group(ranks)
+        group = deepspeed.comm.new_group(ranks)
         if rank in ranks:
             _TENSOR_MODEL_PARALLEL_GROUP = group
 
@@ -153,7 +154,7 @@ def initialize_model_parallel(tensor_model_parallel_size_=1,
     for i in range(num_pipeline_model_parallel_groups):
         ranks = range(i, world_size,
                       num_pipeline_model_parallel_groups)
-        group = torch.distributed.new_group(ranks)
+        group = deepspeed.comm.new_group(ranks)
         if rank in ranks:
             _PIPELINE_MODEL_PARALLEL_GROUP = group
             _PIPELINE_GLOBAL_RANKS = ranks
@@ -163,7 +164,7 @@ def initialize_model_parallel(tensor_model_parallel_size_=1,
             embedding_ranks = [ranks[0], ranks[-1]]
         else:
             embedding_ranks = ranks
-        group = torch.distributed.new_group(embedding_ranks)
+        group = deepspeed.comm.new_group(embedding_ranks)
         if rank in embedding_ranks:
             _EMBEDDING_GROUP = group
 
@@ -229,7 +230,7 @@ def get_tensor_model_parallel_world_size():
     global _MPU_TENSOR_MODEL_PARALLEL_WORLD_SIZE
     if _MPU_TENSOR_MODEL_PARALLEL_WORLD_SIZE is not None:
         return _MPU_TENSOR_MODEL_PARALLEL_WORLD_SIZE
-    return torch.distributed.get_world_size(group=get_tensor_model_parallel_group())
+    return deepspeed.comm.get_world_size(group=get_tensor_model_parallel_group())
 
 
 def get_model_parallel_world_size():
@@ -242,7 +243,7 @@ def get_pipeline_model_parallel_world_size():
     global _MPU_PIPELINE_MODEL_PARALLEL_WORLD_SIZE
     if _MPU_PIPELINE_MODEL_PARALLEL_WORLD_SIZE is not None:
         return _MPU_PIPELINE_MODEL_PARALLEL_WORLD_SIZE
-    return torch.distributed.get_world_size(group=get_pipeline_model_parallel_group())
+    return deepspeed.comm.get_world_size(group=get_pipeline_model_parallel_group())
 
 
 def set_tensor_model_parallel_rank(rank):
@@ -262,7 +263,7 @@ def get_tensor_model_parallel_rank():
     global _MPU_TENSOR_MODEL_PARALLEL_RANK
     if _MPU_TENSOR_MODEL_PARALLEL_RANK is not None:
         return _MPU_TENSOR_MODEL_PARALLEL_RANK
-    return torch.distributed.get_rank(group=get_tensor_model_parallel_group())
+    return deepspeed.comm.get_rank(group=get_tensor_model_parallel_group())
 
 
 def get_model_parallel_rank():
@@ -275,7 +276,7 @@ def get_pipeline_model_parallel_rank():
     global _MPU_PIPELINE_MODEL_PARALLEL_RANK
     if _MPU_PIPELINE_MODEL_PARALLEL_RANK is not None:
         return _MPU_PIPELINE_MODEL_PARALLEL_RANK
-    return torch.distributed.get_rank(group=get_pipeline_model_parallel_group())
+    return deepspeed.comm.get_rank(group=get_pipeline_model_parallel_group())
 
 
 def is_pipeline_first_stage(ignore_virtual=False):
@@ -321,7 +322,7 @@ def get_virtual_pipeline_model_parallel_world_size():
 def get_tensor_model_parallel_src_rank():
     """Calculate the global rank corresponding to the first local rank
     in the tensor model parallel group."""
-    global_rank = torch.distributed.get_rank()
+    global_rank = deepspeed.comm.get_rank()
     local_world_size = get_tensor_model_parallel_world_size()
     return (global_rank // local_world_size) * local_world_size
 
@@ -356,12 +357,12 @@ def get_pipeline_model_parallel_prev_rank():
 
 def get_data_parallel_world_size():
     """Return world size for the data parallel group."""
-    return torch.distributed.get_world_size(group=get_data_parallel_group())
+    return deepspeed.comm.get_world_size(group=get_data_parallel_group())
 
 
 def get_data_parallel_rank():
     """Return my rank for the data parallel group."""
-    return torch.distributed.get_rank(group=get_data_parallel_group())
+    return deepspeed.comm.get_rank(group=get_data_parallel_group())
 
 
 def destroy_model_parallel():

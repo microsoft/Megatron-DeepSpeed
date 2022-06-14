@@ -14,6 +14,7 @@
 # limitations under the License.
 
 import torch
+import deepspeed
 
 from .initialize import get_tensor_model_parallel_group
 from .initialize import get_tensor_model_parallel_rank
@@ -47,7 +48,7 @@ def _build_key_size_numel_dictionaries(keys, data):
 
     # Move to GPU and broadcast.
     sizes_cuda = torch.cuda.LongTensor(sizes)
-    torch.distributed.broadcast(sizes_cuda, get_tensor_model_parallel_src_rank(),
+    deepspeed.comm.broadcast(sizes_cuda, get_tensor_model_parallel_src_rank(),
                                 group=get_tensor_model_parallel_group())
 
     # Move back to cpu and unpack.
@@ -101,7 +102,7 @@ def broadcast_data(keys, data, datatype):
                                    dtype=datatype)
 
     # Broadcast
-    torch.distributed.broadcast(flatten_data, get_tensor_model_parallel_src_rank(),
+    deepspeed.comm.broadcast(flatten_data, get_tensor_model_parallel_src_rank(),
                                 group=get_tensor_model_parallel_group())
 
     # Unpack

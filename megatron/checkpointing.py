@@ -21,6 +21,7 @@ import sys
 import numpy as np
 
 import torch
+import deepspeed
 
 from megatron import (get_args,
                       mpu,
@@ -118,7 +119,7 @@ def save_checkpoint(iteration, model, optimizer, lr_scheduler):
     print_rank_0('saving checkpoint at iteration {:7d} to {}'.format(
         iteration, args.save))
 
-    if not torch.distributed.is_initialized() or mpu.get_data_parallel_rank() == 0 \
+    if not deepspeed.comm.is_initialized() or mpu.get_data_parallel_rank() == 0 \
         or args.deepspeed:
 
         # Arguments, iteration, and model.
@@ -177,21 +178,21 @@ def save_checkpoint(iteration, model, optimizer, lr_scheduler):
             model[0].module.state_dict = original_state_dict
 
     # Wait so everyone is done (necessary)
-    if torch.distributed.is_initialized():
-        torch.distributed.barrier()
+    if deepspeed.comm.is_initialized():
+        deepspeed.comm.barrier()
 
     print_rank_0('  successfully saved checkpoint at iteration {:7d} to {}'.format(
         iteration, args.save))
 
     # And update the latest iteration
-    if not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0:
+    if not deepspeed.comm.is_initialized() or deepspeed.comm.get_rank() == 0:
         tracker_filename = get_checkpoint_tracker_filename(args.save)
         with open(tracker_filename, 'w') as f:
             f.write(str(iteration))
 
     # Wait so everyone is done (not necessary)
-    if torch.distributed.is_initialized():
-        torch.distributed.barrier()
+    if deepspeed.comm.is_initialized():
+        deepspeed.comm.barrier()
 
 def _transpose_first_dim(t, num_splits, num_splits_first, model):
     input_shape = t.size()
@@ -419,8 +420,8 @@ def load_checkpoint(model, optimizer, lr_scheduler, load_arg='load', strict=True
             sys.exit()
 
     # Some utilities want to load a checkpoint without distributed being initialized
-    if torch.distributed.is_initialized():
-        torch.distributed.barrier()
+    if deepspeed.comm.is_initialized():
+        deepspeed.comm.barrier()
 
     print_rank_0(f'  successfully loaded checkpoint from {args.load} '
                  f'at iteration {iteration}')
@@ -448,7 +449,7 @@ def load_biencoder_checkpoint(model, only_query_model=False,
     checkpoint_name = get_checkpoint_name(load_path, iteration, False)
     if mpu.get_data_parallel_rank() == 0:
         print('global rank {} is loading checkpoint {}'.format(
-            torch.distributed.get_rank(), checkpoint_name))
+            deepspeed.comm.get_rank(), checkpoint_name))
 
     state_dict = torch.load(checkpoint_name, map_location='cpu')
     ret_state_dict = state_dict['model']
@@ -460,7 +461,7 @@ def load_biencoder_checkpoint(model, only_query_model=False,
 
     assert len(model) == 1
     model[0].load_state_dict(ret_state_dict)
-    torch.distributed.barrier()
+    deepspeed.comm.barrier()
 
     if mpu.get_data_parallel_rank() == 0:
         print(' successfully loaded {}'.format(checkpoint_name))

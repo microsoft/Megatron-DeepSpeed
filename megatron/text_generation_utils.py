@@ -22,6 +22,7 @@ import time
 
 import torch
 import torch.nn.functional as F
+import deepspeed
 
 from megatron import get_args
 from megatron import get_tokenizer
@@ -138,7 +139,7 @@ def generate_samples_input_from_file(model):
 
             input_info = [terminate_runs, raw_text_len, context_length]
             input_info_tensor = torch.cuda.LongTensor(input_info)
-            torch.distributed.all_reduce(input_info_tensor,
+            deepspeed.comm.all_reduce(input_info_tensor,
                                          group=mpu.get_model_parallel_group())
             terminate_runs = input_info_tensor[0].item()
             raw_text_len = input_info_tensor[1].item()
@@ -155,14 +156,14 @@ def generate_samples_input_from_file(model):
                     src = mpu.get_pipeline_model_parallel_first_rank()
                     group = mpu.get_pipeline_model_parallel_group()
                     context_tokens_tensor = torch.cuda.LongTensor(context_tokens)
-                    torch.distributed.broadcast(context_tokens_tensor, src, group)
+                    deepspeed.comm.broadcast(context_tokens_tensor, src, group)
                 else:
                     src = mpu.get_pipeline_model_parallel_first_rank()
                     group = mpu.get_pipeline_model_parallel_group()
                     context_tokens_tensor = torch.empty(context_length,
                                                         dtype=torch.int64,
                                                         device=torch.device("cuda"))
-                    torch.distributed.broadcast(context_tokens_tensor, src, group)
+                    deepspeed.comm.broadcast(context_tokens_tensor, src, group)
                     context_tokens = context_tokens_tensor.cpu().numpy().tolist()
 
             token_stream = get_token_stream(model, [context_tokens])
@@ -260,7 +261,7 @@ def generate_samples_interactive(model, print_frequency=24):
 
             input_info = [terminate_runs, raw_text_len, context_length]
             input_info_tensor = torch.cuda.LongTensor(input_info)
-            torch.distributed.all_reduce(input_info_tensor,
+            deepspeed.comm.all_reduce(input_info_tensor,
                                          group=mpu.get_model_parallel_group())
             terminate_runs = input_info_tensor[0].item()
             raw_text_len = input_info_tensor[1].item()
@@ -277,14 +278,14 @@ def generate_samples_interactive(model, print_frequency=24):
                     src = mpu.get_pipeline_model_parallel_first_rank()
                     group = mpu.get_pipeline_model_parallel_group()
                     context_tokens_tensor = torch.cuda.LongTensor(context_tokens)
-                    torch.distributed.broadcast(context_tokens_tensor, src, group)
+                    deepspeed.comm.broadcast(context_tokens_tensor, src, group)
                 else:
                     src = mpu.get_pipeline_model_parallel_first_rank()
                     group = mpu.get_pipeline_model_parallel_group()
                     context_tokens_tensor = torch.empty(context_length,
                                                         dtype=torch.int64,
                                                         device=torch.device("cuda"))
-                    torch.distributed.broadcast(context_tokens_tensor, src, group)
+                    deepspeed.comm.broadcast(context_tokens_tensor, src, group)
                     context_tokens = context_tokens_tensor.cpu().numpy().tolist()
 
             token_stream = get_token_stream(model, [context_tokens])
@@ -403,10 +404,10 @@ def get_token_stream(model, context_tokens, model_latencies=[], single_token_lat
     context_tokens_tensor = torch.cuda.LongTensor(context_tokens)
     context_length_tensor = torch.cuda.LongTensor(context_lengths)
 
-    torch.distributed.broadcast(context_length_tensor,
+    deepspeed.comm.broadcast(context_length_tensor,
                                 mpu.get_tensor_model_parallel_src_rank(),
                                 group=mpu.get_tensor_model_parallel_group())
-    torch.distributed.broadcast(context_tokens_tensor,
+    deepspeed.comm.broadcast(context_tokens_tensor,
                                 mpu.get_tensor_model_parallel_src_rank(),
                                 group=mpu.get_tensor_model_parallel_group())
 
@@ -571,7 +572,7 @@ def sample_sequence_batch(model, context_tokens, context_lengths,
                 tokens[:, context_length] = new_tokens
                 src = mpu.get_pipeline_model_parallel_last_rank()
                 group = mpu.get_embedding_group()
-                torch.distributed.broadcast(new_tokens, src, group)
+                deepspeed.comm.broadcast(new_tokens, src, group)
 
                 done_token = (prev == eos_id).byte() & started.byte()
                 just_finished = (done_token & ~is_done).bool()
@@ -581,7 +582,7 @@ def sample_sequence_batch(model, context_tokens, context_lengths,
                 done = torch.all(is_done)
                 src = mpu.get_pipeline_model_parallel_last_rank()
                 group = mpu.get_pipeline_model_parallel_group()
-                torch.distributed.broadcast(done, src, group)
+                deepspeed.comm.broadcast(done, src, group)
                 yield tokens, lengths
 
             else:
@@ -589,7 +590,7 @@ def sample_sequence_batch(model, context_tokens, context_lengths,
                     src = mpu.get_pipeline_model_parallel_last_rank()
                     group = mpu.get_embedding_group()
                     new_tokens = torch.empty_like(tokens[:, context_length])
-                    torch.distributed.broadcast(new_tokens, src, group)
+                    deepspeed.comm.broadcast(new_tokens, src, group)
                     tokens[:, context_length] = new_tokens
                     yield tokens, None
                 else:
@@ -598,7 +599,7 @@ def sample_sequence_batch(model, context_tokens, context_lengths,
                 done = torch.cuda.ByteTensor([0])
                 src = mpu.get_pipeline_model_parallel_last_rank()
                 group = mpu.get_pipeline_model_parallel_group()
-                torch.distributed.broadcast(done, src, group)
+                deepspeed.comm.broadcast(done, src, group)
 
             context_length += 1
             counter += 1

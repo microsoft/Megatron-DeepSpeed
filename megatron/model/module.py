@@ -18,6 +18,7 @@
 import torch
 from torch.autograd import Variable
 from torch.nn.parameter import Parameter
+import deepspeed
 
 from megatron import get_args
 from megatron import mpu
@@ -99,9 +100,9 @@ class MegatronModule(torch.nn.Module):
 
         # Ensure that first and last stages have the same initial parameter
         # values.
-        if torch.distributed.is_initialized():
+        if deepspeed.comm.is_initialized():
             if mpu.is_pipeline_first_stage() or mpu.is_pipeline_last_stage():
-                torch.distributed.all_reduce(self.word_embeddings_weight().data,
+                deepspeed.comm.all_reduce(self.word_embeddings_weight().data,
                                              group=mpu.get_embedding_group())
         else:
             print("WARNING! Distributed processes aren't initialized, so "

@@ -21,12 +21,13 @@ import torch
 import functools
 import operator
 import sys
+import deepspeed
 sys.path.append("../..")
 
 
 def test_broadcast_data(tensor_model_parallel_size):
 
-    if torch.distributed.get_rank() == 0:
+    if deepspeed.comm.get_rank() == 0:
         print('> testing broadcast_data with model parallel size {} ...'.
               format(tensor_model_parallel_size))
 
@@ -71,15 +72,15 @@ def test_broadcast_data(tensor_model_parallel_size):
     # Reset groups
     mpu.destroy_tensor_model_parallel()
 
-    torch.distributed.barrier()
-    if torch.distributed.get_rank() == 0:
+    deepspeed.comm.barrier()
+    if deepspeed.comm.get_rank() == 0:
         print('>> passed the test :-)')
 
 
 if __name__ == '__main__':
 
     initialize_distributed()
-    world_size = torch.distributed.get_world_size()
+    world_size = deepspeed.comm.get_world_size()
 
     tensor_model_parallel_size = 1
     while tensor_model_parallel_size <= world_size:

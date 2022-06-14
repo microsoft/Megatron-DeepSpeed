@@ -18,6 +18,7 @@
 import sys
 
 import torch
+import deepspeed
 from torch.nn.parallel import DistributedDataParallel as torchDDP
 
 from apex.multi_tensor_apply import multi_tensor_applier
@@ -72,8 +73,8 @@ def calc_params_l2_norm(model):
     )
     norm_2 = norm * norm
     # Sum across all model-parallel GPUs.
-    torch.distributed.all_reduce(norm_2,
-                                 op=torch.distributed.ReduceOp.SUM,
+    deepspeed.comm.all_reduce(norm_2,
+                                 op=deepspeed.comm.ReduceOp.SUM,
                                  group=mpu.get_model_parallel_group())
     return norm_2.item() ** 0.5
 
@@ -82,10 +83,10 @@ def average_losses_across_data_parallel_group(losses):
     """Reduce a tensor of losses across all GPUs."""
     averaged_losses = torch.cat(
         [loss.clone().detach().view(1) for loss in losses])
-    torch.distributed.all_reduce(averaged_losses,
+    deepspeed.comm.all_reduce(averaged_losses,
                                  group=mpu.get_data_parallel_group())
     averaged_losses = averaged_losses / \
-        torch.distributed.get_world_size(group=mpu.get_data_parallel_group())
+        deepspeed.comm.get_world_size(group=mpu.get_data_parallel_group())
 
     return averaged_losses
 
@@ -103,14 +104,14 @@ def report_memory(name):
     string += ' | max reserved: {}'.format(
         torch.cuda.max_memory_reserved() / mega_bytes)
     if mpu.get_data_parallel_rank() == 0:
-        print("[Rank {}] {}".format(torch.distributed.get_rank(), string),
+        print("[Rank {}] {}".format(deepspeed.comm.get_rank(), string),
               flush=True)
 
 
 def print_params_min_max_norm(optimizer, iteration):
     """Print min, max, and norm of all parameters."""
     index = 0
-    rank = torch.distributed.get_rank()
+    rank = deepspeed.comm.get_rank()
     string = 'iteration, rank, index, tensor-model-parallel, min, max, norm\n'
     optimizer_ = optimizer.optimizer
     for param_group in optimizer_.param_groups:
@@ -133,12 +134,12 @@ def check_adlr_autoresume_termination(iteration, model,
     args = get_args()
     autoresume = get_adlr_autoresume()
     # Add barrier to ensure consistnecy.
-    torch.distributed.barrier()
+    deepspeed.comm.barrier()
     if autoresume.termination_requested():
         if args.save:
             save_checkpoint(iteration, model, optimizer, lr_scheduler)
         print_rank_0(">>> autoresume termination request found!")
-        if torch.distributed.get_rank() == 0:
+        if deepspeed.comm.get_rank() == 0:
             autoresume.request_resume()
         print_rank_0(">>> training terminated. Returning")
         sys.exit(0)
@@ -205,7 +206,7 @@ def get_ltor_masks_and_position_ids(data,
 
 
 def get_parameters_in_billions(model):
-    gpus_per_model = torch.distributed.get_world_size(group=mpu.get_model_parallel_group())
+    gpus_per_model = deepspeed.comm.get_world_size(group=mpu.get_model_parallel_group())
 
     approx_parameters_in_billions = sum([sum([p.ds_numel if hasattr(p,'ds_id') else  p.nelement() for p in model_module.parameters()])
                                         for model_module in model])
@@ -215,7 +216,7 @@ def get_parameters_in_billions(model):
 
 def flops_calculator(model, args, iteration_time):
     return # currently broken
-    gpus_per_model = torch.distributed.get_world_size(group = mpu.get_model_parallel_group())
+    gpus_per_model = deepspeed.comm.get_world_size(group = mpu.get_model_parallel_group())
 
     approx_parameters_in_billions = get_parameters_in_billions(model)
 

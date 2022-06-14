@@ -17,13 +17,14 @@ from commons import print_separator
 from commons import initialize_distributed
 import mpu
 import torch
+import deepspeed
 import sys
 sys.path.append("../..")
 
 
 def test_set_cuda_rng_state(tensor_model_parallel_size):
 
-    if torch.distributed.get_rank() == 0:
+    if deepspeed.comm.get_rank() == 0:
         print('> testing set_rng_state with size {} ...'.
               format(tensor_model_parallel_size))
 
@@ -51,7 +52,7 @@ def test_set_cuda_rng_state(tensor_model_parallel_size):
     new_rng_state = torch.cuda.get_rng_state()
     max_diff = new_rng_state.sub(rng_state).max()
     print('   max diff in rng state (should be non-zero) on global rank {}: {}'.
-          format(torch.distributed.get_rank(), max_diff))
+          format(deepspeed.comm.get_rank(), max_diff))
     assert max_diff > 0
 
     # Reset the rng state and do the same stuff.
@@ -66,26 +67,26 @@ def test_set_cuda_rng_state(tensor_model_parallel_size):
     # Results should be the same
     error = result_2.sub(result_1).abs().max()
     print('   max error in generated tensors (should be zero) on '
-          'global rank {}: {}'.format(torch.distributed.get_rank(), error))
+          'global rank {}: {}'.format(deepspeed.comm.get_rank(), error))
     assert error < 1.0e-6
 
     # Input state should have remained intact.
     error = rng_state.sub(rng_state_copy).max()
     print('   max error in rng state (should be zero) on global rank {}: {}'.
-          format(torch.distributed.get_rank(), error))
+          format(deepspeed.comm.get_rank(), error))
     assert error == 0
 
     # Reset groups
     mpu.destroy_model_parallel()
 
-    torch.distributed.barrier()
-    if torch.distributed.get_rank() == 0:
+    deepspeed.comm.barrier()
+    if deepspeed.comm.get_rank() == 0:
         print('>> passed the test :-)')
 
 
 def test_cuda_rng_tracker(tensor_model_parallel_size):
 
-    if torch.distributed.get_rank() == 0:
+    if deepspeed.comm.get_rank() == 0:
         print('> testing cuda rng tracker with size {} ...'.
               format(tensor_model_parallel_size))
 
@@ -133,14 +134,14 @@ def test_cuda_rng_tracker(tensor_model_parallel_size):
     diff = result_11.sub(result_21).abs().max()
     diff = min(diff, result_12.sub(result_22).abs().max())
     print('   max diff in generated tensors (should be non-zero) on '
-          'global rank {}: {}'.format(torch.distributed.get_rank(), diff))
+          'global rank {}: {}'.format(deepspeed.comm.get_rank(), diff))
     assert diff > 1.0e-6
     error = max(result_11.sub(target_11).abs().max(),
                 result_12.sub(target_12).abs().max())
     error = max(error, result_21.sub(target_21).abs().max())
     error = max(error, result_22.sub(target_22).abs().max())
     print('   max error in generated tensors (should be zero) on '
-          'global rank {}: {}'.format(torch.distributed.get_rank(), error))
+          'global rank {}: {}'.format(deepspeed.comm.get_rank(), error))
     assert error < 1.0e-6
 
     # Reset the tracker
@@ -149,14 +150,14 @@ def test_cuda_rng_tracker(tensor_model_parallel_size):
     # Reset groups
     mpu.destroy_model_parallel()
 
-    torch.distributed.barrier()
-    if torch.distributed.get_rank() == 0:
+    deepspeed.comm.barrier()
+    if deepspeed.comm.get_rank() == 0:
         print('>> passed the test :-)')
 
 
 def test_model_parallel_cuda_manual_seed(tensor_model_parallel_size):
 
-    if torch.distributed.get_rank() == 0:
+    if deepspeed.comm.get_rank() == 0:
         print('> testing model parallel cuda manual seed with size {} ...'.
               format(tensor_model_parallel_size))
 
@@ -175,15 +176,15 @@ def test_model_parallel_cuda_manual_seed(tensor_model_parallel_size):
     # Reset groups
     mpu.destroy_model_parallel()
 
-    torch.distributed.barrier()
-    if torch.distributed.get_rank() == 0:
+    deepspeed.comm.barrier()
+    if deepspeed.comm.get_rank() == 0:
         print('>> passed the test :-)')
 
 
 if __name__ == '__main__':
 
     initialize_distributed()
-    world_size = torch.distributed.get_world_size()
+    world_size = deepspeed.comm.get_world_size()
 
     tensor_model_parallel_size = 1
     while tensor_model_parallel_size <= world_size:

@@ -145,7 +145,7 @@ def main():
     
     
     #if torch.cuda.current_device() == 0:
-    if torch.distributed.get_rank() == 0:
+    if deepspeed.comm.get_rank() == 0:
         print_latency(latencies)
         print_latency(model_latencies, "model_latencies")
         print_latency(single_token_latency, "single_token_latency")

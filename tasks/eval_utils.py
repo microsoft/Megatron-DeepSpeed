@@ -20,6 +20,7 @@ import time
 from functools import partial
 
 import torch
+import deepspeed
 
 from megatron import get_args
 from megatron import print_rank_last, is_last_rank
@@ -173,7 +174,7 @@ def calculate_correct_answers(name, model, dataloader,
     # Reduce.
     if mpu.is_pipeline_last_stage():
         unreduced = torch.cuda.LongTensor([correct, total])
-        torch.distributed.all_reduce(unreduced,
+        deepspeed.comm.all_reduce(unreduced,
                                      group=mpu.get_data_parallel_group())
 
         # Print on screen.

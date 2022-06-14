@@ -18,6 +18,7 @@ import os
 import random
 import numpy
 import torch
+import deepspeed
 
 import mpu
 
@@ -40,7 +41,7 @@ def set_random_seed(seed):
 
 
 def initialize_distributed(backend='nccl'):
-    """Initialize torch.distributed."""
+    """Initialize deepspeed.comm."""
     # Get local rank in case it is provided.
     parser = argparse.ArgumentParser()
     parser.add_argument('--local_rank', type=int, default=None,
@@ -52,7 +53,7 @@ def initialize_distributed(backend='nccl'):
     rank = int(os.getenv('RANK', '0'))
     world_size = int(os.getenv("WORLD_SIZE", '1'))
 
-    print('> initializing torch.distributed with local rank: {}, '
+    print('> initializing deepspeed.comm with local rank: {}, '
           'rank: {}, world size: {}'.format(local_rank, rank, world_size))
 
     # Set the device id.
@@ -66,7 +67,7 @@ def initialize_distributed(backend='nccl'):
     master_ip = os.getenv('MASTER_ADDR', 'localhost')
     master_port = os.getenv('MASTER_PORT', '6000')
     init_method += master_ip + ':' + master_port
-    torch.distributed.init_process_group(
+    deepspeed.comm.init_process_group(
         backend=backend,
         world_size=world_size,
         rank=rank,
@@ -74,10 +75,10 @@ def initialize_distributed(backend='nccl'):
 
 
 def print_separator(message):
-    torch.distributed.barrier()
+    deepspeed.comm.barrier()
     filler_len = (78 - len(message)) // 2
     filler = '-' * filler_len
     string = '\n' + filler + ' {} '.format(message) + filler
-    if torch.distributed.get_rank() == 0:
+    if deepspeed.comm.get_rank() == 0:
         print(string, flush=True)
-    torch.distributed.barrier()
+    deepspeed.comm.barrier()

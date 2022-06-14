@@ -58,7 +58,7 @@ import deepspeed
 
 def print_datetime(string):
     """Note that this call will sync across all ranks."""
-    torch.distributed.barrier()
+    deepspeed.comm.barrier()
     time_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     print_rank_0('[' + string + '] datetime: {} '.format(time_str))
 
@@ -101,8 +101,8 @@ def pretrain(train_valid_test_dataset_provider,
     # image ... launches.
     global _TRAIN_START_TIME
     start_time_tensor = torch.cuda.FloatTensor([_TRAIN_START_TIME])
-    torch.distributed.all_reduce(start_time_tensor,
-                                 op=torch.distributed.ReduceOp.MIN)
+    deepspeed.comm.all_reduce(start_time_tensor,
+                                 op=deepspeed.comm.ReduceOp.MIN)
     _TRAIN_START_TIME = start_time_tensor.item()
     print_rank_0('time to initialize megatron (seconds): {:.3f}'.format(
         time.time() - _TRAIN_START_TIME))
@@ -437,13 +437,13 @@ def setup_model_and_optimizer(model_provider_func, teacher=False):
         timers = get_timers()
         # Extra barrier is added to make sure all ranks report the
         # max time.
-        torch.distributed.barrier()
+        deepspeed.comm.barrier()
         timers('load-checkpoint').start()
         if args.mos:
             args.iteration = load_checkpoint(model, optimizer, lr_scheduler, strict=False, load_only_weights=False)
         else:
             args.iteration = load_checkpoint(model, optimizer, lr_scheduler)
-        torch.distributed.barrier()
+        deepspeed.comm.barrier()
         timers('load-checkpoint').stop()
         timers.log(['load-checkpoint'])
     else:
@@ -529,7 +529,7 @@ def train_step(forward_step_func, data_iterator,
                     grad = word_embeddings_weight.main_grad
                 else:
                     grad = word_embeddings_weight.grad
-                torch.distributed.all_reduce(grad, group=mpu.get_embedding_group())
+                deepspeed.comm.all_reduce(grad, group=mpu.get_embedding_group())
     timers('backward-embedding-all-reduce').stop()
 
     # Update parameters.
@@ -718,30 +718,30 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
                     opt_stats_2[1] = max(opt_stats_2[1], optimizer.state[param]['exp_avg_sq'].sqrt().abs_().max().item())
                     opt_stats_2[2] = max(opt_stats_2[2], abs(optimizer.state[param]['exp_avg'].max().item()), abs(optimizer.state[param]['exp_avg'].min().item()))
                     opt_stats_2[3] = max(opt_stats_2[3], abs(param.max().item()), abs(param.min().item()))
-            # print('step {} rank {} before sync opt_stats {}, {}'.format(iteration, torch.distributed.get_rank(), opt_stats_2, opt_stats))
+            # print('step {} rank {} before sync opt_stats {}, {}'.format(iteration, deepspeed.comm.get_rank(), opt_stats_2, opt_stats))
             if args.zero_stage > 0:
                 # ZeRO partiions optimizer states
                 opt_stats = torch.cuda.FloatTensor(opt_stats)
-                torch.distributed.all_reduce(opt_stats, group=mpu.get_data_parallel_group())
+                deepspeed.comm.all_reduce(opt_stats, group=mpu.get_data_parallel_group())
                 opt_stats_2 = torch.cuda.FloatTensor(opt_stats_2)
-                torch.distributed.all_reduce(opt_stats_2, op=torch.distributed.ReduceOp.MAX,
+                deepspeed.comm.all_reduce(opt_stats_2, op=deepspeed.comm.ReduceOp.MAX,
                     group=mpu.get_data_parallel_group())
 
             if args.tensor_model_parallel_size > 1:
                 opt_stats = torch.cuda.FloatTensor(opt_stats)
-                torch.distributed.all_reduce(opt_stats, group=mpu.get_tensor_model_parallel_group())
+                deepspeed.comm.all_reduce(opt_stats, group=mpu.get_tensor_model_parallel_group())
                 opt_stats_2 = torch.cuda.FloatTensor(opt_stats_2)
-                torch.distributed.all_reduce(opt_stats_2, op=torch.distributed.ReduceOp.MAX,
+                deepspeed.comm.all_reduce(opt_stats_2, op=deepspeed.comm.ReduceOp.MAX,
                     group=mpu.get_tensor_model_parallel_group())
 
             if args.pipeline_model_parallel_size > 1:
                 opt_stats = torch.cuda.FloatTensor(opt_stats)
-                torch.distributed.all_reduce(opt_stats, group=mpu.get_pipeline_model_parallel_group())
+                deepspeed.comm.all_reduce(opt_stats, group=mpu.get_pipeline_model_parallel_group())
                 opt_stats_2 = torch.cuda.FloatTensor(opt_stats_2)
-                torch.distributed.all_reduce(opt_stats_2, op=torch.distributed.ReduceOp.MAX,
+                deepspeed.comm.all_reduce(opt_stats_2, op=deepspeed.comm.ReduceOp.MAX,
                     group=mpu.get_pipeline_model_parallel_group())
 
-            # print('step {} rank {} after sync opt_stats {}, {}'.format(iteration, torch.distributed.get_rank(), opt_stats_2, opt_stats))
+            # print('step {} rank {} after sync opt_stats {}, {}'.format(iteration, deepspeed.comm.get_rank(), opt_stats_2, opt_stats))
             if writer and is_last_rank():
                 writer.add_scalar('optimizer/variance_l2 vs tokens', opt_stats[0]**0.5, args.consumed_train_tokens)
                 writer.add_scalar('optimizer/variance_sqrt_l2 vs tokens', opt_stats[1]**0.5, args.consumed_train_tokens)
@@ -830,10 +830,10 @@ def save_checkpoint_and_time(iteration, model, optimizer, lr_scheduler):
     timers = get_timers()
     # Extra barrier is added to make sure
     # all ranks report the max time.
-    torch.distributed.barrier()
+    deepspeed.comm.barrier()
     timers('save-checkpoint').start()
     save_checkpoint(iteration, model, optimizer, lr_scheduler)
-    torch.distributed.barrier()
+    deepspeed.comm.barrier()
     timers('save-checkpoint').stop()
     timers.log(['save-checkpoint'])
 
@@ -933,8 +933,8 @@ def train(forward_step_func, model, optimizer, lr_scheduler,
             train_time = (time.time() - _TRAIN_START_TIME) / 60.0
             done_cuda = torch.cuda.IntTensor(
                 [train_time > args.exit_duration_in_mins])
-            torch.distributed.all_reduce(
-                done_cuda, op=torch.distributed.ReduceOp.MAX)
+            deepspeed.comm.all_reduce(
+                done_cuda, op=deepspeed.comm.ReduceOp.MAX)
             done = done_cuda.item()
             if done:
                 if not saved_checkpoint:
@@ -948,7 +948,7 @@ def train(forward_step_func, model, optimizer, lr_scheduler,
             if not saved_checkpoint:
                 save_checkpoint_and_time(iteration, model, optimizer,
                                          lr_scheduler)
-            torch.distributed.barrier()
+            deepspeed.comm.barrier()
             print_datetime('exiting program at iteration {}'.format(iteration))
             sys.exit()
 
@@ -1132,7 +1132,7 @@ def build_train_valid_test_data_iterators(
         flags = torch.cuda.LongTensor([0, 0, 0])
 
     # Broadcast num tokens.
-    torch.distributed.broadcast(flags,
+    deepspeed.comm.broadcast(flags,
                                 mpu.get_tensor_model_parallel_src_rank(),
                                 group=mpu.get_tensor_model_parallel_group())
     args.do_train = flags[0].item()

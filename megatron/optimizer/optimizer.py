@@ -19,6 +19,7 @@ from abc import ABC
 from abc import abstractmethod
 
 import torch
+import deepspeed
 
 from apex.multi_tensor_apply import multi_tensor_applier
 import amp_C
@@ -330,8 +331,8 @@ class Float16OptimizerWithFloat16Params(MegatronOptimizer):
         torch._amp_foreach_non_finite_check_and_unscale_(
             main_grads, self.found_inf, self.grad_scaler.inv_scale)
         # Update across all model parallel instances.
-        torch.distributed.all_reduce(self.found_inf,
-                                     op=torch.distributed.ReduceOp.MAX,
+        deepspeed.comm.all_reduce(self.found_inf,
+                                     op=deepspeed.comm.ReduceOp.MAX,
                                      group=mpu.get_model_parallel_group())
 
         # Check for nan.

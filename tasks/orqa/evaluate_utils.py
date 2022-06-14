@@ -14,6 +14,7 @@
 # limitations under the License.
 
 import torch
+import deepspeed
 
 from megatron import get_args, print_rank_0
 from megatron.checkpointing import load_biencoder_checkpoint
@@ -79,7 +80,7 @@ class ORQAEvaluator(object):
                                         use_gpu=self.faiss_use_gpu)
 
         # Wait for the FAISS index to be initialized in all the nodes
-        torch.distributed.barrier()
+        deepspeed.comm.barrier()
 
     def generate_query_vectors(self, qa_data, split):
 
@@ -120,16 +121,16 @@ class ORQAEvaluator(object):
         query_tensor, reference_list = self.generate_query_vectors(qa_data, \
                                                                     split)
         local_rank = args.local_rank
-        rank = torch.distributed.get_rank()
+        rank = deepspeed.comm.get_rank()
         device_count = torch.cuda.device_count()
-        num_nodes = torch.distributed.get_world_size() // device_count
+        num_nodes = deepspeed.comm.get_world_size() // device_count
         node_id = rank // device_count
 
         for node in range(num_nodes):
             start_rank = node * device_count
             end_rank = (node + 1) * device_count
             ranks_list = list(range(start_rank, end_rank))
-            node_group = torch.distributed.new_group(ranks=ranks_list)
+            node_group = deepspeed.comm.new_group(ranks=ranks_list)
 
             if node_id == node:
                 device_start_rank = start_rank
@@ -137,7 +138,7 @@ class ORQAEvaluator(object):
         
         input_ = torch.empty_like(query_tensor).copy_(query_tensor).detach_()
         tensor_list = [torch.empty_like(input_) for _ in range(device_count)]
-        torch.distributed.all_gather(tensor_list, query_tensor, group=group)
+        deepspeed.comm.all_gather(tensor_list, query_tensor, group=group)
 
         if local_rank == 0 and self.mips_index is not None:
             all_query_tensor = torch.cat(tensor_list, dim=0).contiguous()
@@ -154,9 +155,9 @@ class ORQAEvaluator(object):
             topkindex = torch.empty(device_count * len(query_tensor), \
                 args.faiss_topk_retrievals, dtype=torch.int64).cuda()
 
-        torch.distributed.broadcast(distance, src=device_start_rank, \
+        deepspeed.comm.broadcast(distance, src=device_start_rank, \
             group=group)
-        torch.distributed.broadcast(topkindex, src=device_start_rank, \
+        deepspeed.comm.broadcast(topkindex, src=device_start_rank, \
             group=group)
 
         distance = torch.split(distance, len(query_tensor), dim=0)\

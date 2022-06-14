@@ -18,6 +18,7 @@ from abc import abstractmethod
 
 import torch
 from torch._utils import _flatten_dense_tensors, _unflatten_dense_tensors
+import deepspeed
 
 from megatron import get_args
 from megatron import mpu
@@ -191,7 +192,7 @@ class DistributedDataParallel(DistributedDataParallelBase):
         if self._grad_buffers is not None:
             for _, buffer_ in self._grad_buffers.items():
                 buffer_.data /= mpu.get_data_parallel_world_size()
-                torch.distributed.all_reduce(
+                deepspeed.comm.all_reduce(
                     buffer_.data, group=mpu.get_data_parallel_group())
         else:
             # Otherwise, bucketize and all-reduce
@@ -211,7 +212,7 @@ class DistributedDataParallel(DistributedDataParallelBase):
                 grads = [param.grad.data for param in bucket]
                 coalesced = _flatten_dense_tensors(grads)
                 coalesced /= mpu.get_data_parallel_world_size()
-                torch.distributed.all_reduce(
+                deepspeed.comm.all_reduce(
                     coalesced, group=mpu.get_data_parallel_group())
                 for buf, synced in zip(grads, _unflatten_dense_tensors(
                         coalesced, grads)):

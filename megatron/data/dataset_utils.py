@@ -25,6 +25,7 @@ import collections
 
 import numpy as np
 import torch
+import deepspeed
 
 from megatron import (
     get_args,
@@ -662,7 +663,7 @@ def get_samples_mapping(indexed_dataset,
     indexmap_filename += '.npy'
 
     # Build the indexed mapping if not exist.
-    if torch.distributed.get_rank() == 0 and \
+    if deepspeed.comm.get_rank() == 0 and \
        not os.path.isfile(indexmap_filename):
         print(' > WARNING: could not find index map file {}, building '
               'the indices on rank 0 ...'.format(indexmap_filename))
@@ -672,7 +673,7 @@ def get_samples_mapping(indexed_dataset,
         assert indexed_dataset.sizes.dtype == np.int32
 
         # Build samples mapping
-        verbose = torch.distributed.get_rank() == 0
+        verbose = deepspeed.comm.get_rank() == 0
         start_time = time.time()
         print_rank_0(' > building sapmles index mapping for {} ...'.format(
             name))
@@ -700,11 +701,11 @@ def get_samples_mapping(indexed_dataset,
     # device_index=rank which is not the case for model
     # parallel case
     counts = torch.cuda.LongTensor([1])
-    torch.distributed.all_reduce(counts, group=mpu.get_data_parallel_group())
-    torch.distributed.all_reduce(counts, group=mpu.get_pipeline_model_parallel_group())
+    deepspeed.comm.all_reduce(counts, group=mpu.get_data_parallel_group())
+    deepspeed.comm.all_reduce(counts, group=mpu.get_pipeline_model_parallel_group())
     assert counts[0].item() == (
-        torch.distributed.get_world_size() //
-        torch.distributed.get_world_size(group=mpu.get_tensor_model_parallel_group()))
+        deepspeed.comm.get_world_size() //
+        deepspeed.comm.get_world_size(group=mpu.get_tensor_model_parallel_group()))
 
     # Load indexed dataset.
     print_rank_0(' > loading indexed mapping from {}'.format(

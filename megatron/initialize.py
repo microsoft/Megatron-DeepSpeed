@@ -54,10 +54,10 @@ def initialize_megatron(extra_args_provider=None, args_defaults={},
                          args_defaults=args_defaults,
                          ignore_unknown_args=ignore_unknown_args)
 
-    # torch.distributed initialization
+    # deepspeed.comm initialization
     def finish_mpu_init():
         args = get_args()
-        # Pytorch distributed.
+        # Pydeepspeed.comm.
         _initialize_distributed()
         
         # Random seeds for reproducibility.
@@ -100,7 +100,7 @@ def _compile_dependencies():
     # Compile dataset C++ code.
     # =========================
     # TODO: move this to ninja
-    if torch.distributed.get_rank() == 0:
+    if deepspeed.comm.get_rank() == 0:
         start_time = time.time()
         print('> compiling dataset index builder ...')
         from megatron.data.dataset_utils import compile_helper
@@ -131,20 +131,20 @@ def _compile_dependencies():
                   ' back to unfused kernel invocations.', flush=True)
     
     # Always build on rank zero first.
-    if torch.distributed.get_rank() == 0:
+    if deepspeed.comm.get_rank() == 0:
         start_time = time.time()
         print('> compiling and loading fused kernels ...', flush=True)
         fused_kernels.load(args)
-        torch.distributed.barrier()
+        deepspeed.comm.barrier()
     else:
-        torch.distributed.barrier()
+        deepspeed.comm.barrier()
         fused_kernels.load(args)
     # Simple barrier to make sure all ranks have passed the
     # compilation phase successfully before moving on to the
     # rest of the program. We think this might ensure that
     # the lock is released.
-    torch.distributed.barrier()
-    if torch.distributed.get_rank() == 0:
+    deepspeed.comm.barrier()
+    if deepspeed.comm.get_rank() == 0:
         print('>>> done with compiling and loading fused kernels. '
               'Compilation time: {:.3f} seconds'.format(
                   time.time() - start_time), flush=True)
@@ -182,20 +182,20 @@ def setup_deepspeed_random_and_activation_checkpointing(args):
 
 
 def _initialize_distributed():
-    """Initialize torch.distributed and mpu."""
+    """Initialize deepspeed.comm and mpu."""
     args = get_args()
     device_count = torch.cuda.device_count()
-    if torch.distributed.is_initialized():
+    if deepspeed.comm.is_initialized():
 
         if args.rank == 0:
-            print('torch distributed is already initialized, '
+            print('deepspeed.comm is already initialized, '
                   'skipping initialization ...', flush=True)
-        args.rank = torch.distributed.get_rank()
-        args.world_size = torch.distributed.get_world_size()
+        args.rank = deepspeed.comm.get_rank()
+        args.world_size = deepspeed.comm.get_world_size()
 
     else:
         if args.rank == 0:
-            print('> initializing torch distributed ...', flush=True)
+            print('> initializing deepspeed.comm ...', flush=True)
         # Manually set the device ids.
         if device_count > 0:
             device = args.rank % device_count
@@ -238,9 +238,9 @@ def _init_autoresume():
     """Set autoresume start time."""
     autoresume = get_adlr_autoresume()
     if autoresume:
-        torch.distributed.barrier()
+        deepspeed.comm.barrier()
         autoresume.init()
-        torch.distributed.barrier()
+        deepspeed.comm.barrier()
 
 
 def _set_random_seed(seed_):

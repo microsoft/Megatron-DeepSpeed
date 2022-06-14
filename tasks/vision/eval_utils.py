@@ -23,6 +23,7 @@ from megatron import mpu
 from tasks.vision.finetune_utils import build_data_loader
 from tasks.vision.finetune_utils import process_batch
 from torchvision import datasets, transforms
+import deepspeed
 
 
 def accuracy_func_provider():
@@ -87,7 +88,7 @@ def calculate_correct_answers(model, dataloader, epoch):
 
     # Reduce.
     unreduced = torch.cuda.LongTensor([correct, total])
-    torch.distributed.all_reduce(unreduced, group=mpu.get_data_parallel_group())
+    deepspeed.comm.all_reduce(unreduced, group=mpu.get_data_parallel_group())
 
     # Print on screen.
     correct_ans = unreduced[0].item()
