@@ -31,6 +31,48 @@ def _reduce(input_):
 
     return input_
 
+def _reduce_scatter(input_):
+    """Reduce scatter the input tensor across model parallel group."""
+
+    # Bypass the function if we are using only 1 GPU.
+    if get_tensor_model_parallel_world_size()==1:
+        return input_
+
+    # All-reduce.
+    input_ = input_.contiguous()
+    total_chunks = get_tensor_model_parallel_world_size()
+    this_chunk = get_tensor_model_parallel_rank()
+
+    assert input_.shape[0] % total_chunks == 0
+
+    chunk_size = input_.shape[0]// total_chunks
+
+    input_list = [input_[i*chunk_size:(i+1)*chunk_size] for i in range(total_chunks)]
+
+    output = torch.zeros_like(input_list[this_chunk])
+    torch.distributed.reduce_scatter(output, input_list, group=get_tensor_model_parallel_group())
+    
+    return output
+
+def _gather_first_dim(input_):
+    """Gather tensors and concatinate along the first dimension."""
+
+    world_size = get_tensor_model_parallel_world_size()
+    # Bypass the function if we are using only 1 GPU.
+    if world_size==1:
+        return input_
+
+    # Size and dimension.
+    rank = get_tensor_model_parallel_rank()
+
+    tensor_list = [torch.empty_like(input_) for _ in range(world_size)]
+    tensor_list[rank] = input_
+    torch.distributed.all_gather(tensor_list, input_, group=get_tensor_model_parallel_group())
+
+    # Note: torch.cat already creates a contiguous tensor.
+    output = torch.cat(tensor_list, dim=0).contiguous()
+  
+    return output
 
 def _split(input_):
     """Split the tensor along its last dimension and keep the
@@ -136,6 +178,35 @@ class _GatherFromModelParallelRegion(torch.autograd.Function):
     def backward(ctx, grad_output):
         return _split(grad_output)
 
+class _ReduceScatterFromModelParallelRegion(torch.autograd.Function):
+    """Reduce scatter output of self attention for MoE"""
+
+    @staticmethod
+    def symbolic(graph, input_):
+        return _reduce_scatter(input_)
+    
+    @staticmethod
+    def forward(ctx, input_):
+        return _reduce_scatter(input_)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        return _gather_first_dim(grad_output)
+
+class _AllGatherFromModelParallelRegion(torch.autograd.Function):
+    """Reduce scatter output of self attention for MoE"""
+
+    @staticmethod
+    def symbolic(graph, input_):
+        return _gather_first_dim(input_)
+    
+    @staticmethod
+    def forward(ctx, input_):
+        return _gather_first_dim(input_)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        return _reduce_scatter(grad_output)
 
 # -----------------
 # Helper functions.
@@ -152,6 +223,11 @@ def reduce_from_tensor_model_parallel_region(input_):
 def scatter_to_tensor_model_parallel_region(input_):
     return _ScatterToModelParallelRegion.apply(input_)
 
-
 def gather_from_tensor_model_parallel_region(input_):
     return _GatherFromModelParallelRegion.apply(input_)
+
+def reduce_scatter_from_tensor_model_parallel_region(input_):
+    return _ReduceScatterFromModelParallelRegion.apply(input_)
+
+def all_gather_from_tensor_model_parallel_region(input_):
+    return _AllGatherFromModelParallelRegion.apply(input_)

@@ -31,6 +31,7 @@ from .mappings import copy_to_tensor_model_parallel_region
 from .mappings import gather_from_tensor_model_parallel_region
 from .mappings import reduce_from_tensor_model_parallel_region
 from .mappings import scatter_to_tensor_model_parallel_region
+from .mappings import reduce_scatter_from_tensor_model_parallel_region
 from .random import get_cuda_rng_tracker
 from .utils import divide
 from .utils import split_tensor_along_last_dim
@@ -130,6 +131,16 @@ def _initialize_affine_weight_cpu(weight, output_size, input_size,
         return master_weight
     return None
 
+def get_residual_for_reduce_scatter(residual):
+    if get_tensor_model_parallel_world_size() == 1:
+        return residual 
+        
+    total_chunks = get_tensor_model_parallel_world_size()
+    this_chunk = get_tensor_model_parallel_rank()
+    assert residual.shape[0] % total_chunks == 0
+    chunk_size = residual.shape[0]// total_chunks
+
+    return residual[this_chunk*chunk_size:(this_chunk+1)*chunk_size] 
 
 class VocabParallelEmbedding(torch.nn.Module):
     """Embedding parallelized in the vocabulary dimension.
@@ -330,7 +341,8 @@ class RowParallelLinear(torch.nn.Module):
                  input_is_parallel=False,
                  init_method=init.xavier_normal_, stride=1,
                  keep_master_weight_for_test=False,
-                 skip_bias_add=False, MOE=False, MoE_mp_size=1):
+                 skip_bias_add=False, MOE=False, MoE_mp_size=1,
+                 reduce_scatter=False):
         super(RowParallelLinear, self).__init__()
 
         # Keep input parameters
@@ -339,6 +351,7 @@ class RowParallelLinear(torch.nn.Module):
         self.input_is_parallel = input_is_parallel
         # Divide the weight matrix along the last dimension.
         world_size = MoE_mp_size if MOE else get_tensor_model_parallel_world_size()
+        
         self.input_size_per_partition = divide(input_size, world_size)
         self.skip_bias_add = skip_bias_add
 
@@ -346,7 +359,13 @@ class RowParallelLinear(torch.nn.Module):
         # Note: torch.nn.functional.linear performs XA^T + b and as a result
         # we allocate the transpose.
         # Initialize weight.
+        
+        if reduce_scatter:
+            assert not MOE, "reduce scatter is exclusively for self-attention outer projection"
+        self.reduce_scatter = reduce_scatter
+
         args = get_args()
+
         if args.use_cpu_initialization:
             self.weight = Parameter(torch.empty(self.output_size,
                                                 self.input_size_per_partition,
@@ -376,7 +395,6 @@ class RowParallelLinear(torch.nn.Module):
             self.register_parameter('bias', None)
 
 
-
     def forward(self, input_):
         # Set up backprop all-reduce.
         if self.input_is_parallel:
@@ -385,8 +403,13 @@ class RowParallelLinear(torch.nn.Module):
             input_parallel = scatter_to_tensor_model_parallel_region(input_)
         # Matrix multiply.
         output_parallel = F.linear(input_parallel, self.weight)
-        # All-reduce across all the partitions.
-        output_ = reduce_from_tensor_model_parallel_region(output_parallel)
+
+        if self.reduce_scatter: # do nothing, reduce scatter will be called after layer norm
+            output_ = reduce_scatter_from_tensor_model_parallel_region(output_parallel)
+        else:
+            # All-reduce across all the partitions.
+            output_ = reduce_from_tensor_model_parallel_region(output_parallel)
+        
         if not self.skip_bias_add:
             output = output_ + self.bias if self.bias is not None else output_
             output_bias = None

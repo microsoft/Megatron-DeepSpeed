@@ -42,6 +42,7 @@ from .initialize import get_virtual_pipeline_model_parallel_rank, set_virtual_pi
 from .initialize import initialize_model_parallel
 from .initialize import model_parallel_is_initialized
 from .initialize import get_model_parallel_world_size, get_model_parallel_rank
+#from .initialize import get_expert_model_parallel_world_size, get_expert_data_parallel_world_size, get_expert_data_parallel_rank
 
 from .layers import ColumnParallelLinear
 from .layers import RowParallelLinear
@@ -54,6 +55,8 @@ from .mappings import copy_to_tensor_model_parallel_region
 from .mappings import gather_from_tensor_model_parallel_region
 from .mappings import reduce_from_tensor_model_parallel_region
 from .mappings import scatter_to_tensor_model_parallel_region
+from .mappings import reduce_scatter_from_tensor_model_parallel_region
+from .mappings import all_gather_from_tensor_model_parallel_region
 
 from .random import checkpoint
 from .random import get_cuda_rng_tracker
@@ -65,3 +68,4 @@ from .random import split_tensor_into_1d_equal_chunks
 
 from .utils import divide
 from .utils import split_tensor_along_last_dim
+from .layers import get_residual_for_reduce_scatter

@@ -231,6 +231,14 @@ def get_tensor_model_parallel_world_size():
         return _MPU_TENSOR_MODEL_PARALLEL_WORLD_SIZE
     return torch.distributed.get_world_size(group=get_tensor_model_parallel_group())
 
+# def get_expert_model_parallel_world_size():
+#     return 1
+
+# def get_expert_data_parallel_world_size():
+#     return dist.get_world_size()
+
+# def get_expert_data_parallel_rank():
+#     return dist.get_rank()
 
 def get_model_parallel_world_size():
     assert get_pipeline_model_parallel_world_size() == 1, "legacy get_model_parallel_world_size is only supported if PP is disabled"
