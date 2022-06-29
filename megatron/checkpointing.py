@@ -184,7 +184,7 @@ def save_checkpoint(iteration, model, optimizer, lr_scheduler):
         iteration, args.save))
 
     # And update the latest iteration
-    if not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0:
+    if not torch.distributed.is_initialized() or torch.distributed.get_rank() % torch.cuda.device_count() == 0:
         tracker_filename = get_checkpoint_tracker_filename(args.save)
         with open(tracker_filename, 'w') as f:
             f.write(str(iteration))
