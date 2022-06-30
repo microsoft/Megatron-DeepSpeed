@@ -20,8 +20,8 @@ from abc import abstractmethod
 
 from .bert_tokenization import FullTokenizer as FullBertTokenizer
 from .gpt2_tokenization import GPT2Tokenizer
-from .zh_tokenization import ZHBertTokenizer, jieba
-
+from .zh_tokenization import ZHBertTokenizer
+import jieba
 
 def build_tokenizer(args):
     """Initialize tokenizer."""

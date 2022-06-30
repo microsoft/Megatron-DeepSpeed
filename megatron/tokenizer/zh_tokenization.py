@@ -5,7 +5,6 @@ import re
 import unicodedata
 import sentencepiece as spm
 import os
-import jieba
 
 vocab_path = os.path.join(os.path.abspath(__file__),
                           "zh_vocab.txt")
