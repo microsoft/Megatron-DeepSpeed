@@ -23,6 +23,7 @@ from .gpt2_tokenization import GPT2Tokenizer
 from .zh_tokenization import ZHBertTokenizer
 import jieba
 
+
 def build_tokenizer(args):
     """Initialize tokenizer."""
     if args.rank == 0:
@@ -42,6 +43,10 @@ def build_tokenizer(args):
     elif args.tokenizer_type == 'GPT2BPETokenizer':
         assert args.merge_file is not None
         tokenizer = _GPT2BPETokenizer(args.vocab_file, args.merge_file)
+    elif args.tokenizer_type == 'ZHBertTokenizer':
+        tokenizer = _ZHBertTokenizer(vocab_file=args.vocab_file,
+                                     lower_case=True,
+                                     vocab_extra_ids=args.vocab_extra_ids)
     else:
         raise NotImplementedError('{} tokenizer is not '
                                   'implemented.'.format(args.tokenizer_type))
@@ -294,6 +299,8 @@ class _GPT2BPETokenizer(AbstractTokenizer):
 
 class _ZHBertTokenizer(AbstractTokenizer):
     def __init__(self, vocab_file, lower_case=True, vocab_extra_ids=0):
+        name = "Zh Bert&Jieba"
+        super().__init__(name)
         self.tokenizer = ZHBertTokenizer(vocab=vocab_file,
                                          do_lower_case=lower_case,
                                          pre_tokenize=lambda s: jieba.cut(s, HMM=False))
