@@ -319,3 +319,10 @@ class GPT2Tokenizer(object):
                 index += 1
 
         return vocab_file, merge_file, special_tokens_file
+
+class ZHWordPieceTokenizer(object):
+    """
+
+    Args:
+        object (_type_): _description_
+    """

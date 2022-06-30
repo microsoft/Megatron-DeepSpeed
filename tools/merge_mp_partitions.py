@@ -219,7 +219,7 @@ def main():
     print(' > checkpoint path: {}'.format(args.load))
     print(' > model parameters:')
     print('    number of tokens ................ {} '.format(
-        tokenizer.vocab_size))
+        tokenizer._vocab_size))
     print('    number of layers ................ {}'.format(args.num_layers))
     print('    hidden size ..................... {}'.format(args.hidden_size))
     print('    number of attention heads ....... {}'.format(

@@ -43,7 +43,7 @@ class EvalHarnessAdaptor(GPT2LM):
         self.args = args
         self.model = model
         self.tokenizer = tokenizer
-        self.VOCAB_SIZE = tokenizer.vocab_size
+        self.VOCAB_SIZE = tokenizer._vocab_size
         self.EOT_TOKEN_ID = tokenizer.eod
 
         self._max_length = args.seq_length
@@ -271,7 +271,7 @@ class EvalHarnessAdaptor(GPT2LM):
             send_forward(output)
 
         if mpu.is_pipeline_last_stage():
-            return gather_from_tensor_model_parallel_region(output)[..., :self.tokenizer.vocab_size]
+            return gather_from_tensor_model_parallel_region(output)[..., :self.tokenizer._vocab_size]
         else:
             return None
 

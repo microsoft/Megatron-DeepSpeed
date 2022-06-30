@@ -20,6 +20,7 @@ from abc import abstractmethod
 
 from .bert_tokenization import FullTokenizer as FullBertTokenizer
 from .gpt2_tokenization import GPT2Tokenizer
+from .zh_tokenization import ZHBertTokenizer, jieba
 
 
 def build_tokenizer(args):
@@ -58,13 +59,13 @@ def _vocab_size_with_padding(orig_vocab_size, args):
 
     after = orig_vocab_size
     multiple = args.make_vocab_size_divisible_by * \
-        args.tensor_model_parallel_size
+               args.tensor_model_parallel_size
     while (after % multiple) != 0:
         after += 1
     if args.rank == 0:
         print(' > padded vocab (size: {}) with {} dummy tokens '
               '(new size: {})'.format(
-                  orig_vocab_size, after - orig_vocab_size, after), flush=True)
+            orig_vocab_size, after - orig_vocab_size, after), flush=True)
     return after
 
 
@@ -289,3 +290,123 @@ class _GPT2BPETokenizer(AbstractTokenizer):
     @property
     def eod(self):
         return self.eod_id
+
+
+class _ZHBertTokenizer(AbstractTokenizer):
+    def __init__(self, vocab_file, lower_case=True, vocab_extra_ids=0):
+        self.tokenizer = ZHBertTokenizer(vocab=vocab_file,
+                                         do_lower_case=lower_case,
+                                         pre_tokenize=lambda s: jieba.cut(s, HMM=False))
+        self.cls_id = self.tokenizer.vocab['[CLS]']
+        self.sep_id = self.tokenizer.vocab['[SEP]']
+        self.pad_id = self.tokenizer.vocab['[PAD]']
+        self.mask_id = self.tokenizer.vocab['[MASK]']
+        self._additional_special_tokens = []
+        # (dsachan) Add BOS and EOS tokens
+        SPECIAL_TOKENS = {'eos_token': '[EOS]',
+                          'bos_token': '[BOS]'}
+
+        self._bos_token = '[BOS]'
+        self.add_token(self._bos_token)
+        self._bos_token_id = self.vocab.get(self._bos_token)
+
+        self._eos_token = '[EOS]'
+        self.add_token(self._eos_token)
+        self._eos_token_id = self.vocab.get(self._eos_token)
+
+        # (dsachan) Add additional special tokens
+        # These can be used as sentinel tokens in T5 model inputs
+        additional_special_tokens = []
+        additional_special_tokens.extend(
+            ["<extra_id_{}>".format(i) for i in range(vocab_extra_ids)])
+        self.add_additional_special_tokens(additional_special_tokens)
+
+    def add_token(self, token):
+        if token not in self.vocab:
+            self.inv_vocab[self.vocab_size] = token
+            # self.vocab_size comes from len(vocab)
+            # and it will increase as we add elements
+            self.vocab[token] = self.vocab_size
+
+    def add_additional_special_tokens(self, tokens_list):
+        setattr(self, "additional_special_tokens", tokens_list)
+        for value in tokens_list:
+            self.add_token(value)
+
+    @property
+    def vocab_size(self):
+        return self.tokenizer.vocab_size()
+
+    @property
+    def vocab(self):
+        return self.tokenizer.vocab
+
+    @property
+    def inv_vocab(self):
+        return self.tokenizer.inv_vocab
+
+    def tokenize(self, text):
+        return self.tokenizer.tokenize(text)
+
+    def decode(self, ids):
+        return [self.tokenizer.id_to_token(i) for i in ids]
+
+    def decode_token_ids(self, token_ids):
+        return self.tokenizer.decode(token_ids)
+
+    @property
+    def cls(self):
+        return self.cls_id
+
+    @property
+    def sep(self):
+        return self.sep_id
+
+    @property
+    def pad(self):
+        return self.pad_id
+
+    @property
+    def mask(self):
+        return self.mask_id
+
+    @property
+    def bos_token(self):
+        """ Beginning of sentence token id """
+        return self._bos_token
+
+    @property
+    def eos_token(self):
+        """ End of sentence token id """
+        return self._eos_token
+
+    @property
+    def eod(self):
+        """
+        this token is used to support gpt training
+        """
+        return self._eos_token
+
+    @property
+    def additional_special_tokens(self):
+        """ All the additional special tokens you may want to use (list of strings)."""
+        return self._additional_special_tokens
+
+    @property
+    def bos_token_id(self):
+        """ Id of the beginning of sentence token in the vocabulary."""
+        return self._bos_token_id
+
+    @property
+    def eos_token_id(self):
+        """ Id of the end of sentence token in the vocabulary."""
+        return self._eos_token_id
+
+    @property
+    def additional_special_tokens_ids(self):
+        """ Ids of all the additional special tokens in the vocabulary (list of integers)."""
+        return [self.vocab.get(token) for token in self._additional_special_tokens]
+
+    @additional_special_tokens.setter
+    def additional_special_tokens(self, value):
+        self._additional_special_tokens = value
