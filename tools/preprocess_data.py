@@ -83,7 +83,6 @@ class Encoder(object):
             doc_ids = []
             for sentence in Encoder.splitter.tokenize(text):
                 sentence_ids = Encoder.tokenizer.tokenize(sentence)
-                print(sentence_ids)
                 if len(sentence_ids) > 0:
                     doc_ids.append(sentence_ids)
             if len(doc_ids) > 0 and self.args.append_eod:
