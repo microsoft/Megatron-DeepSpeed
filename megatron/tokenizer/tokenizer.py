@@ -354,10 +354,11 @@ class _ZHBertTokenizer(AbstractTokenizer):
         return self.tokenizer.inv_vocab
 
     def tokenize(self, text):
-        return self.tokenizer.tokenize(text)
+        text_tokens = self.tokenizer.tokenize(text)
+        return self.tokenizer.tokens_to_ids(text_tokens)
 
     def decode(self, ids):
-        return [self.tokenizer.id_to_token(i) for i in ids]
+        return self.tokenizer.decode(ids)
 
     def decode_token_ids(self, token_ids):
         return self.tokenizer.decode(token_ids)
