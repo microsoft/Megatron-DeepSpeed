@@ -36,6 +36,7 @@ import subprocess
 from torch import nn
 import torch.nn.functional as F
 
+
 def model_provider(pre_process=True, post_process=True):
     """Build the model."""
 
@@ -62,7 +63,7 @@ def model_provider(pre_process=True, post_process=True):
             # we can reuse it.
             attention_mask = torch.tril(torch.ones(
                 (1, args.seq_length, args.seq_length), device=torch.cuda.current_device())).view(
-                    1, 1, args.seq_length, args.seq_length)
+                1, 1, args.seq_length, args.seq_length)
 
             # Convert attention mask to binary:
             attention_mask = (attention_mask < 0.5)
@@ -157,7 +158,7 @@ def loss_func(loss_mask, moe_loss, mos_loss, output_tensor):
     losses = output_tensor.float()
     loss_mask = loss_mask.view(-1).float()
     loss = torch.sum(losses.view(-1) * loss_mask) / loss_mask.sum()
-    
+
     # Reduce loss for logging.
     averaged_loss = average_losses_across_data_parallel_group([loss])
     if args.mos:
@@ -171,23 +172,26 @@ def loss_func(loss_mask, moe_loss, mos_loss, output_tensor):
             loss = loss + moe_loss
             return loss, {'lm loss': averaged_loss[0], 'moe loss': moe_loss}
 
+
 def calculate_mos_loss(args, stu_output, teacher_model, tokens, position_ids, attention_mask):
     mos_loss = 0
     alpha = args.kd_alpha_ce
     beta = args.kd_beta_ce
     kd_temp = args.kd_temp
-    
+
     if teacher_model:
         with torch.no_grad():
             tea_output, *tea_other_losses = teacher_model(tokens, position_ids, attention_mask)
             assert stu_output.size() == tea_output.size(), 'teacher and student output should match in size.'
 
         student_logits = F.log_softmax(stu_output / kd_temp, dim=2)
-        tea_logits = F.softmax(tea_output / kd_temp, dim=2) # The target logits is expected to be probabilities. If we use log_softmax, then we need to set target_log to true when initializing the KLDivLoss.
+        tea_logits = F.softmax(tea_output / kd_temp,
+                               dim=2)  # The target logits is expected to be probabilities. If we use log_softmax, then we need to set target_log to true when initializing the KLDivLoss.
         mos_loss = kd_temp * kd_temp * nn.KLDivLoss(reduction='batchmean')(student_logits, tea_logits)
 
         mos_loss = mos_loss.div(args.seq_length) * beta
     return mos_loss
+
 
 def forward_step(data_iterator, model, teacher_model=None):
     """Forward step."""
@@ -206,7 +210,7 @@ def forward_step(data_iterator, model, teacher_model=None):
         output_tensor = mpu.vocab_parallel_cross_entropy(stu_output.contiguous().float(), labels)
     else:
         output_tensor, *other_losses = model(tokens, position_ids, attention_mask,
-                                            labels=labels)
+                                             labels=labels)
     if args.curriculum_learning and args.curriculum_seqlen < args.seq_length:
         loss_mask = loss_mask[:, :args.curriculum_seqlen].contiguous()
 
@@ -220,7 +224,7 @@ def forward_step(data_iterator, model, teacher_model=None):
     if args.mos:
         assert model.training
         mos_loss = calculate_mos_loss(args, stu_output, teacher_model, tokens, position_ids, attention_mask)
-    
+
     # Output_tensor stores the standard loss, loos_func calculates the total loss.
     return output_tensor, partial(loss_func, loss_mask, moe_loss, mos_loss)
 
@@ -273,5 +277,10 @@ def git_ds_info():
 
 if __name__ == "__main__":
     git_ds_info()
-    pretrain(train_valid_test_datasets_provider, model_provider, forward_step,
-             args_defaults={'tokenizer_type': 'GPT2BPETokenizer'})
+    args = get_args()
+    if not args.tokenizer_type:
+        pretrain(train_valid_test_datasets_provider, model_provider, forward_step,
+                 args_defaults={'tokenizer_type': 'GPT2BPETokenizer'})
+    else:
+        pretrain(train_valid_test_datasets_provider, model_provider, forward_step,
+                 args_defaults={'tokenizer_type': args.tokenizer_type})

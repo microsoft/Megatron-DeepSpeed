@@ -128,7 +128,17 @@ def train_valid_test_datasets_provider(train_val_test_num_samples):
     return train_ds, valid_ds, test_ds
 
 
-if __name__ == "__main__":
+def git_ds_info():
+    from deepspeed.env_report import main as ds_report
+    ds_report()
 
-    pretrain(train_valid_test_datasets_provider, model_provider, forward_step,
-             args_defaults={'tokenizer_type': 'BertWordPieceLowerCase'})
+
+if __name__ == "__main__":
+    git_ds_info()
+    args = get_args()
+    if not args.tokenizer_type:
+        pretrain(train_valid_test_datasets_provider, model_provider, forward_step,
+                 args_defaults={'tokenizer_type': 'GPT2BPETokenizer'})
+    else:
+        pretrain(train_valid_test_datasets_provider, model_provider, forward_step,
+                 args_defaults={'tokenizer_type': args.tokenizer_type})
