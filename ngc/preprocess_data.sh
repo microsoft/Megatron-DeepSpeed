@@ -1,7 +1,7 @@
 #!/bin/bash
 
 IMAGE=pytorch2203
-MEGATRON=/home/nvidia/Projects/Megatron-LM
+MEGATRON=/home/nvidia/Megatron-DeepSpeed
 
 INPUT=/data/converted/oscar.json
 
