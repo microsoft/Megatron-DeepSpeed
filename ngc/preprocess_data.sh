@@ -9,7 +9,8 @@ DATA_PREFIX=/data/upload/oscar/word_oscar
 WORKERS=16
 
 EXE=${MEGATRON}/tools/preprocess_data.py   # For Chinese
-
+#TOKENIZER=BertWordPieceLowerCase
+TOKENIZER=ZHBertTokenizer
 docker exec ${NAME} \
         /bin/bash \
         -c " cd ${MEGATRON}; pip install -r requirements.txt ;  mkdir /data/upload/oscar ; \
@@ -20,6 +21,6 @@ docker exec ${NAME} \
        --json-keys ${KEYS} \
        --dataset-impl mmap \
        --workers ${WORKERS} \
-       --tokenizer-type BertWordPieceLowerCase \
+       --tokenizer-type ${TOKENIZER} \
        --append-eod
        "
