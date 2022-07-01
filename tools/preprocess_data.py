@@ -83,9 +83,9 @@ class Encoder(object):
             doc_ids = []
             for sentence in Encoder.splitter.tokenize(text):
                 sentence_ids = Encoder.tokenizer.tokenize(sentence)
-                print("-"*10)
+                print("-"*150)
                 print(text)
-                print("-"*10)
+                print("-"*150)
                 print(sentence_ids)
                 if len(sentence_ids) > 0:
                     doc_ids.append(sentence_ids)
@@ -93,8 +93,9 @@ class Encoder(object):
             if len(doc_ids) > 0 and self.args.append_eod:
                 doc_ids[-1].append(Encoder.tokenizer.eod)
             ids[key] = doc_ids
-            print("-" * 10)
+            print("-" * 150)
             print(ids)
+            print("-" * 150)
             break
         return ids, len(json_line)
 
