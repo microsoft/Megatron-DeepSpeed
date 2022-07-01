@@ -16,7 +16,7 @@ docker run --rm --gpus all \
         --name=${NAME} \
         -v /data/:/data/ -v ${HOME}:${HOME} \
         --privileged \
-        --shm-size=4g \
+        --shm-size=20g \
         --ulimit memlock=-1 \
         --ulimit stack=67108864 \
         -it ${IMAGE} \
