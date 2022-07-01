@@ -9,8 +9,8 @@ DATA_PREFIX=/data/upload/oscar/word_oscar
 WORKERS=1
 
 EXE=${MEGATRON}/tools/preprocess_data.py   # For Chinese
-#TOKENIZER=BertWordPieceLowerCase
-TOKENIZER=ZHBertTokenizer
+TOKENIZER=BertWordPieceLowerCase
+#TOKENIZER=ZHBertTokenizer
 docker exec ${NAME} \
         /bin/bash \
         -c " cd ${MEGATRON}; pip install -r requirements.txt ;  mkdir /data/upload/oscar ; \
