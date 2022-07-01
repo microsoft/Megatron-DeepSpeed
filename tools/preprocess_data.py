@@ -161,7 +161,7 @@ def main():
     if args.split_sentences:
         level = "sentence"
 
-    print(f"Vocab size: {tokenizer._vocab_size}")
+    print(f"Vocab size: {tokenizer.vocab_size}")
     print(f"Output prefix: {args.output_prefix}")
     output_bin_files = {}
     output_idx_files = {}
@@ -173,7 +173,7 @@ def main():
                                                       key, level)
         builders[key] = indexed_dataset.make_builder(output_bin_files[key],
                                                      impl=args.dataset_impl,
-                                                     vocab_size=tokenizer._vocab_size)
+                                                     vocab_size=tokenizer.vocab_size)
 
     startup_end = time.time()
     proc_start = time.time()
