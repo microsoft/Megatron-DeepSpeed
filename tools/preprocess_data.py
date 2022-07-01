@@ -161,8 +161,12 @@ def main():
 
     encoder = Encoder(args)
     tokenizer = build_tokenizer(args)
-    pool = multiprocessing.Pool(args.workers, initializer=encoder.initializer)
-    encoded_docs = pool.imap(encoder.encode, fin, 25)
+    encoder.initializer()
+    line = fin.readline()
+    print("line {}".format(line))
+    print("encoded {}".format(encoder.encode(line)))
+    # pool = multiprocessing.Pool(args.workers, initializer=encoder.initializer)
+    # encoded_docs = pool.imap(encoder.encode, fin, 25)
     #encoded_docs = map(encoder.encode, fin)
     return
     level = "document"
