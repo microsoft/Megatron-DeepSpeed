@@ -1,8 +1,6 @@
 #!/bin/bash
-
-IMAGE=nvcr.io/nvidia/pytorch:22.03-py3
 MEGATRON=/home/nvidia/Megatron-DeepSpeed
-NAME=preprocess
+NAME=pytorch2203
 
 INPUT=/data/converted/oscar.json
 VOCAB=${MEGATRON}/vocab/zh_word.vocab
@@ -12,14 +10,7 @@ WORKERS=16
 
 EXE=${MEGATRON}/tools/preprocess_data.py   # For Chinese
 
-docker run --rm --gpus all \
-        --name=${NAME} \
-        -v /data/:/data/ -v ${HOME}:${HOME} \
-        --privileged \
-        --shm-size=20g \
-        --ulimit memlock=-1 \
-        --ulimit stack=67108864 \
-        -it ${IMAGE} \
+docker exec ${NAME} \
         /bin/bash \
         -c " cd ${MEGATRON}; pip install -r requirements.txt ;  mkdir /data/upload/oscar ; \
         python ${EXE} \

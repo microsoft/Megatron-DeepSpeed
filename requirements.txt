@@ -5,5 +5,4 @@ nltk~=3.7
 transformers~=4.19.4
 pillow~=9.1.1
 sentencepiece~=0.1.96
-setuptools~=62.6.0
 jieba~=0.42.1
