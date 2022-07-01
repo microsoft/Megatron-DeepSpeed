@@ -131,16 +131,7 @@ def _initialize_affine_weight_cpu(weight, output_size, input_size,
         return master_weight
     return None
 
-def get_residual_for_reduce_scatter(residual):
-    if get_tensor_model_parallel_world_size() == 1:
-        return residual 
-        
-    total_chunks = get_tensor_model_parallel_world_size()
-    this_chunk = get_tensor_model_parallel_rank()
-    assert residual.shape[0] % total_chunks == 0
-    chunk_size = residual.shape[0]// total_chunks
-
-    return residual[this_chunk*chunk_size:(this_chunk+1)*chunk_size] 
+ 
 
 class VocabParallelEmbedding(torch.nn.Module):
     """Embedding parallelized in the vocabulary dimension.
@@ -250,6 +241,7 @@ class ColumnParallelLinear(torch.nn.Module):
         self.gather_output = gather_output
         # Divide the weight matrix along the last dimension.
         world_size = MoE_mp_size if MOE else get_tensor_model_parallel_world_size()
+        self.MOE = MOE
         self.output_size_per_partition = divide(output_size, world_size)
         self.skip_bias_add = skip_bias_add
 
@@ -293,12 +285,15 @@ class ColumnParallelLinear(torch.nn.Module):
 
     def forward(self, input_):
         # Set up backprop all-reduce.
-        input_parallel = copy_to_tensor_model_parallel_region(input_)
+        if not self.MOE:
+            input_parallel = copy_to_tensor_model_parallel_region(input_)
+        else:
+            input_parallel = input_
         # Matrix multiply.
 
         bias = self.bias if not self.skip_bias_add else None
         output_parallel = F.linear(input_parallel, self.weight, bias)
-        if self.gather_output:
+        if self.gather_output and not self.MoE:
             # All-gather across the partitions.
             output = gather_from_tensor_model_parallel_region(output_parallel)
         else:
@@ -342,7 +337,7 @@ class RowParallelLinear(torch.nn.Module):
                  init_method=init.xavier_normal_, stride=1,
                  keep_master_weight_for_test=False,
                  skip_bias_add=False, MOE=False, MoE_mp_size=1,
-                 reduce_scatter=False):
+                ):
         super(RowParallelLinear, self).__init__()
 
         # Keep input parameters
@@ -351,7 +346,8 @@ class RowParallelLinear(torch.nn.Module):
         self.input_is_parallel = input_is_parallel
         # Divide the weight matrix along the last dimension.
         world_size = MoE_mp_size if MOE else get_tensor_model_parallel_world_size()
-        
+        self.MOE = MOE
+
         self.input_size_per_partition = divide(input_size, world_size)
         self.skip_bias_add = skip_bias_add
 
@@ -360,10 +356,6 @@ class RowParallelLinear(torch.nn.Module):
         # we allocate the transpose.
         # Initialize weight.
         
-        if reduce_scatter:
-            assert not MOE, "reduce scatter is exclusively for self-attention outer projection"
-        self.reduce_scatter = reduce_scatter
-
         args = get_args()
 
         if args.use_cpu_initialization:
@@ -400,16 +392,16 @@ class RowParallelLinear(torch.nn.Module):
         if self.input_is_parallel:
             input_parallel = input_
         else:
+            assert not self.MoE
             input_parallel = scatter_to_tensor_model_parallel_region(input_)
         # Matrix multiply.
         output_parallel = F.linear(input_parallel, self.weight)
 
-        if self.reduce_scatter: # do nothing, reduce scatter will be called after layer norm
-            output_ = reduce_scatter_from_tensor_model_parallel_region(output_parallel)
-        else:
+        if not self.MOE:
             # All-reduce across all the partitions.
             output_ = reduce_from_tensor_model_parallel_region(output_parallel)
-        
+        else:
+            output_ = output_parallel
         if not self.skip_bias_add:
             output = output_ + self.bias if self.bias is not None else output_
             output_bias = None

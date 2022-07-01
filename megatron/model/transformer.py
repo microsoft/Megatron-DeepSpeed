@@ -59,7 +59,7 @@ class ParallelMLP(MegatronModule):
     applied.
     """
 
-    def __init__(self, init_method, output_layer_init_method, MOE=False, MoE_mp_size=1):
+    def __init__(self, init_method, output_layer_init_method, MOE=False, MoE_mp_size=1, ):
         super(ParallelMLP, self).__init__()
         args = get_args()
 
@@ -118,7 +118,7 @@ class ParallelAttention(MegatronModule):
                  output_layer_init_method, layer_number,
                  attention_type=AttnType.self_attn,
                  attn_mask_type=AttnMaskType.padding,
-                 reduce_scatter=False):
+                 ):
         super(ParallelAttention, self).__init__()
         args = get_args()
         self.fp16 = args.fp16
@@ -190,7 +190,7 @@ class ParallelAttention(MegatronModule):
             input_is_parallel=True,
             init_method=output_layer_init_method,
             skip_bias_add=True,
-            reduce_scatter=reduce_scatter)
+            )
 
         if deepspeed.checkpointing.is_configured():
             global get_cuda_rng_tracker, checkpoint
@@ -425,7 +425,7 @@ class ParallelTransformerLayer(MegatronModule):
             layer_number,
             attention_type=AttnType.self_attn,
             attn_mask_type=self_attn_mask_type,
-            reduce_scatter = (num_experts > 1))
+           )
         self.hidden_dropout = args.hidden_dropout
         self.bias_dropout_fusion = args.bias_dropout_fusion
 
@@ -507,9 +507,6 @@ class ParallelTransformerLayer(MegatronModule):
 
         # re-enable torch grad to enable fused optimization.
 
-        if self.num_experts > 1:
-            residual = mpu.get_residual_for_reduce_scatter(residual)
-
         with torch.enable_grad():
             layernorm_input = bias_dropout_add_func(
                 attention_output,
@@ -549,16 +546,16 @@ class ParallelTransformerLayer(MegatronModule):
         if self.num_experts == 1:
             mlp_output, mlp_bias = self.mlp(layernorm_output)
         else:
+            # drop sequences
+            #layernorm_output = mpu.drop_tokens(layernorm_output)
             mlp_output, moe_loss, _ = self.mlp(layernorm_output)
+            #mlp_output = mpu.all_gather_from_tensor_model_parallel_region(mlp_output)
 
         # Second residual connection.
         if self.apply_residual_connection_post_layernorm:
             residual = layernorm_output
         else:
             residual = layernorm_input
-
-        # if self.num_experts > 1:
-        #     residual = mpu.get_residual_for_reduce_scatter(residual)
 
         # re-enable torch grad to enable fused optimization.
         with torch.enable_grad():
@@ -571,8 +568,7 @@ class ParallelTransformerLayer(MegatronModule):
             #else:
             #    output = mlp_output + residual
 
-        if self.num_experts > 1:
-            output = mpu.all_gather_from_tensor_model_parallel_region(output)
+        
         
         if get_key_value:
             output = [output, presents]

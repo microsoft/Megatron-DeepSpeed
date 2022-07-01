@@ -57,6 +57,8 @@ from .mappings import reduce_from_tensor_model_parallel_region
 from .mappings import scatter_to_tensor_model_parallel_region
 from .mappings import reduce_scatter_from_tensor_model_parallel_region
 from .mappings import all_gather_from_tensor_model_parallel_region
+from .mappings import drop_tokens
+
 
 from .random import checkpoint
 from .random import get_cuda_rng_tracker
@@ -68,4 +70,3 @@ from .random import split_tensor_into_1d_equal_chunks
 
 from .utils import divide
 from .utils import split_tensor_along_last_dim
-from .layers import get_residual_for_reduce_scatter
