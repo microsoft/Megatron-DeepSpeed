@@ -20,6 +20,6 @@ docker exec ${NAME} \
        --json-keys ${KEYS} \
        --dataset-impl mmap \
        --workers ${WORKERS} \
-       --tokenizer-type ZHBertTokenizer \
+       --tokenizer-type BertWordPieceLowerCase \
        --append-eod
        "
