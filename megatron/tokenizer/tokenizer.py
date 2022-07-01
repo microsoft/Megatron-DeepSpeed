@@ -142,7 +142,6 @@ class _BertWordPieceTokenizer(AbstractTokenizer):
             name = 'BERT Upper Case'
         super().__init__(name)
         self.tokenizer = FullBertTokenizer(vocab_file, do_lower_case=lower_case)
-        print(self.tokenizer.vocab)
         self.cls_id = self.tokenizer.vocab['[CLS]']
         self.sep_id = self.tokenizer.vocab['[SEP]']
         self.pad_id = self.tokenizer.vocab['[PAD]']
