@@ -6,7 +6,7 @@ INPUT=/data/converted/oscar.json
 VOCAB=${MEGATRON}/vocab/zh_word.vocab
 KEYS=text
 DATA_PREFIX=/data/upload/oscar/word_oscar
-WORKERS=16
+WORKERS=1
 
 EXE=${MEGATRON}/tools/preprocess_data.py   # For Chinese
 TOKENIZER=BertWordPieceLowerCase
