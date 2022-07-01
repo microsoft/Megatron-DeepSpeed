@@ -309,9 +309,6 @@ class _ZHBertTokenizer(AbstractTokenizer):
         self.pad_id = self.tokenizer.vocab['[PAD]']
         self.mask_id = self.tokenizer.vocab['[MASK]']
         self._additional_special_tokens = []
-        # (dsachan) Add BOS and EOS tokens
-        SPECIAL_TOKENS = {'eos_token': '[EOS]',
-                          'bos_token': '[BOS]'}
 
         self._bos_token = '[BOS]'
         self.add_token(self._bos_token)
@@ -320,6 +317,10 @@ class _ZHBertTokenizer(AbstractTokenizer):
         self._eos_token = '[EOS]'
         self.add_token(self._eos_token)
         self._eos_token_id = self.vocab.get(self._eos_token)
+
+        self._eod_token = '[EOD]'
+        self.add_token(self._eod_token)
+        self._eod_token_id = self.vocab.get(self._eod_token)
 
         # (dsachan) Add additional special tokens
         # These can be used as sentinel tokens in T5 model inputs
@@ -392,7 +393,7 @@ class _ZHBertTokenizer(AbstractTokenizer):
         """
         this token is used to support gpt training
         """
-        return self._eos_token
+        return self._eod_token
 
     @property
     def additional_special_tokens(self):

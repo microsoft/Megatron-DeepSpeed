@@ -6,9 +6,6 @@ import unicodedata
 import sentencepiece as spm
 import os
 
-vocab_path = os.path.join(os.path.abspath(__file__),
-                          "zh_vocab.txt")
-
 
 def truncate_sequences(maxlen, indices, *sequences):
     """截断总长度至不超过maxlen
@@ -210,7 +207,7 @@ class ZHBertTokenizer(TokenizerBase):
     """
 
     def __init__(
-            self, vocab=vocab_path, do_lower_case=False, word_maxlen=200, **kwargs
+            self, vocab=None, do_lower_case=False, word_maxlen=200, **kwargs
     ):
         super(ZHBertTokenizer, self).__init__(**kwargs)
         if isinstance(vocab, str):
