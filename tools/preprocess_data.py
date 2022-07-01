@@ -164,7 +164,7 @@ def main():
     pool = multiprocessing.Pool(args.workers, initializer=encoder.initializer)
     encoded_docs = pool.imap(encoder.encode, fin, 25)
     #encoded_docs = map(encoder.encode, fin)
-
+    return
     level = "document"
     if args.split_sentences:
         level = "sentence"
