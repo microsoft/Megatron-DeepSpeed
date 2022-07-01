@@ -428,67 +428,67 @@ class ZHBertTokenizer(TokenizerBase):
 
         return token_mapping
 
-
-class ZHSentencePieceTokenizer(TokenizerBase):
-    """基于SentencePiece模型的封装，使用上跟Tokenizer基本一致。
-    """
-
-    def __init__(self, sp_model_path, **kwargs):
-        super(ZHSentencePieceTokenizer, self).__init__(**kwargs)
-        self.sp_model = spm.SentencePieceProcessor()
-        self.sp_model.Load(sp_model_path)
-        self._token_pad = self.sp_model.id_to_piece(self.sp_model.pad_id())
-        self._token_unk = self.sp_model.id_to_piece(self.sp_model.unk_id())
-        self._vocab_size = self.sp_model.get_piece_size()
-
-        for token in ['pad', 'unk', 'mask', 'start', 'end']:
-            try:
-                _token = getattr(self, '_token_%s' % token)
-                _token_id = self.sp_model.piece_to_id(_token)
-                setattr(self, '_token_%s_id' % token, _token_id)
-            except:
-                pass
-
-    def token_to_id(self, token):
-        """ token to id
-        """
-        return self.sp_model.piece_to_id(token)
-
-    def id_to_token(self, i):
-        """ id to token
-        """
-        if i < self._vocab_size:
-            return self.sp_model.id_to_piece(i)
-        else:
-            return ''
-
-    def decode(self, ids):
-        """ decode id to text
-        """
-        tokens = [
-            self._token_translate_inv.get(token) or token
-            for token in self.ids_to_tokens(ids)
-        ]
-        text = self.sp_model.decode_pieces(tokens)
-        return convert_to_unicode(text)
-
-    def _tokenize(self, text):
-        """ base tokenize function
-        """
-        if self._pre_tokenize is not None:
-            text = ' '.join(self._pre_tokenize(text))
-
-        tokens = self.sp_model.encode_as_pieces(text)
-        return tokens
-
-    def _is_special(self, i):
-        """ check weather token is special
-        """
-        return self.sp_model.is_control(i) or \
-               self.sp_model.is_unknown(i) or \
-               self.sp_model.is_unused(i)
-
-    def _is_decodable(self, i):
-        """ check weather token should be decoded
-        """
-        return (i < self._vocab_size) and not self._is_special(i)
+#
+# class ZHSentencePieceTokenizer(TokenizerBase):
+#     """基于SentencePiece模型的封装，使用上跟Tokenizer基本一致。
+#     """
+#
+#     def __init__(self, sp_model_path, **kwargs):
+#         super(ZHSentencePieceTokenizer, self).__init__(**kwargs)
+#         self.sp_model = spm.SentencePieceProcessor()
+#         self.sp_model.Load(sp_model_path)
+#         self._token_pad = self.sp_model.id_to_piece(self.sp_model.pad_id())
+#         self._token_unk = self.sp_model.id_to_piece(self.sp_model.unk_id())
+#         self._vocab_size = self.sp_model.get_piece_size()
+#
+#         for token in ['pad', 'unk', 'mask', 'start', 'end']:
+#             try:
+#                 _token = getattr(self, '_token_%s' % token)
+#                 _token_id = self.sp_model.piece_to_id(_token)
+#                 setattr(self, '_token_%s_id' % token, _token_id)
+#             except:
+#                 pass
+#
+#     def token_to_id(self, token):
+#         """ token to id
+#         """
+#         return self.sp_model.piece_to_id(token)
+#
+#     def id_to_token(self, i):
+#         """ id to token
+#         """
+#         if i < self._vocab_size:
+#             return self.sp_model.id_to_piece(i)
+#         else:
+#             return ''
+#
+#     def decode(self, ids):
+#         """ decode id to text
+#         """
+#         tokens = [
+#             self._token_translate_inv.get(token) or token
+#             for token in self.ids_to_tokens(ids)
+#         ]
+#         text = self.sp_model.decode_pieces(tokens)
+#         return convert_to_unicode(text)
+#
+#     def _tokenize(self, text):
+#         """ base tokenize function
+#         """
+#         if self._pre_tokenize is not None:
+#             text = ' '.join(self._pre_tokenize(text))
+#
+#         tokens = self.sp_model.encode_as_pieces(text)
+#         return tokens
+#
+#     def _is_special(self, i):
+#         """ check weather token is special
+#         """
+#         return self.sp_model.is_control(i) or \
+#                self.sp_model.is_unknown(i) or \
+#                self.sp_model.is_unused(i)
+#
+#     def _is_decodable(self, i):
+#         """ check weather token should be decoded
+#         """
+#         return (i < self._vocab_size) and not self._is_special(i)
