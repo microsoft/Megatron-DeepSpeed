@@ -234,3 +234,22 @@ class BertModel(MegatronModule):
         if self.post_process and not self.pre_process:
             self.word_embeddings.load_state_dict(
                 state_dict[self._word_embeddings_for_head_key], strict=strict)
+
+    def state_dict(self, destination=None, prefix='',
+                                       keep_vars=False):
+        state_dict_ = {}
+        state_dict_[self._language_model_key] \
+            = self.language_model.state_dict_for_save_checkpoint(
+            destination, prefix, keep_vars)
+        if self.post_process:
+            state_dict_[self._lm_head_key] \
+                = self.lm_head.state_dict_for_save_checkpoint(
+                destination, prefix, keep_vars)
+        if self.post_process and self.add_binary_head:
+            state_dict_[self._binary_head_key] \
+                = self.binary_head.state_dict(destination, prefix, keep_vars)
+        # Save word_embeddings.
+        if self.post_process and not self.pre_process:
+            state_dict_[self._word_embeddings_for_head_key] \
+                = self.word_embeddings.state_dict(destination, prefix, keep_vars)
+        return state_dict_
