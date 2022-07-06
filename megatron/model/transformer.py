@@ -546,10 +546,7 @@ class ParallelTransformerLayer(MegatronModule):
         if self.num_experts == 1:
             mlp_output, mlp_bias = self.mlp(layernorm_output)
         else:
-            # drop sequences
-            #layernorm_output = mpu.drop_tokens(layernorm_output)
             mlp_output, moe_loss, _ = self.mlp(layernorm_output)
-            #mlp_output = mpu.all_gather_from_tensor_model_parallel_region(mlp_output)
 
         # Second residual connection.
         if self.apply_residual_connection_post_layernorm:

@@ -217,7 +217,7 @@ class _AllGatherFromModelParallelRegion(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output):
-        return _drop_tokens(grad_output, ctx.dim), None
+        return drop_tokens(grad_output, ctx.dim), None
 
 class _DropTokens(torch.autograd.Function):
     "Drop tokens (this is a hacky approach until we can do reduce scatter)"
