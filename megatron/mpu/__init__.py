@@ -57,7 +57,6 @@ from .mappings import scatter_to_tensor_model_parallel_region
 from .mappings import all_gather_from_tensor_model_parallel_region
 from .mappings import drop_tokens
 
-
 from .random import checkpoint
 from .random import get_cuda_rng_tracker
 from .random import init_checkpointed_activations_memory_buffer
