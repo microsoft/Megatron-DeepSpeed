@@ -1,5 +1,5 @@
 ## Megatron-DeepSpeed
-DeepSpeed version of NVIDIA's Megatron-LM that adds additional support for several features such as MoE, Curriculum Learning, 3D Parallelism, etc.
+DeepSpeed version of NVIDIA's Megatron-LM that adds additional support for several features such as MoE, Curriculum Learning, 3D Parallelism. This version also allows easy experimentation on Azure either using VMs and VMSS based bash scripts or via directly using AzureML recipes.
 
 ------
 
