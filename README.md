@@ -76,7 +76,8 @@ The models require vocabulary files to run. The BERT  WordPiece vocab file can b
 Additional notes for DeepSpeed. We have added a helper script to download the checkpoints and make the example runnable.
 
 Steps to follow:
- - bash ds_download_ckpt.sh -- this will download and extract the checkpoint and GPT merges and vocab files.
+ - bash dataset/download_ckpt.sh -- this will download and extract the checkpoint
+ - bash dataset/download_vocab.sh -- this will download GPT merges and vocab files.
  - bash examples/generate_text.sh -- this will generate examples using the 345m GPT model.
 
 # Usage
