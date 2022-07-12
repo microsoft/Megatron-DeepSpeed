@@ -241,7 +241,7 @@ class ColumnParallelLinear(torch.nn.Module):
         # Divide the weight matrix along the last dimension.
         world_size = MoE_mp_size if MOE else get_tensor_model_parallel_world_size()
         self.MOE = MOE
-        self.is_expert_without_slicing =  self.MOE and self.world_size==1
+        self.is_expert_without_slicing =  self.MOE and world_size==1
         self.output_size_per_partition = divide(output_size, world_size)
         self.skip_bias_add = skip_bias_add
 
@@ -348,7 +348,7 @@ class RowParallelLinear(torch.nn.Module):
         # Divide the weight matrix along the last dimension.
         world_size = MoE_mp_size if MOE else get_tensor_model_parallel_world_size()
         self.MOE = MOE
-        self.is_expert_without_slicing =  self.MOE and self.world_size==1
+        self.is_expert_without_slicing =  self.MOE and world_size==1
 
         self.input_size_per_partition = divide(input_size, world_size)
         self.skip_bias_add = skip_bias_add
