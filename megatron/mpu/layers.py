@@ -241,6 +241,7 @@ class ColumnParallelLinear(torch.nn.Module):
         # Divide the weight matrix along the last dimension.
         world_size = MoE_mp_size if MOE else get_tensor_model_parallel_world_size()
         self.MOE = MOE
+        self.is_expert_without_slicing =  self.MOE and self.world_size==1
         self.output_size_per_partition = divide(output_size, world_size)
         self.skip_bias_add = skip_bias_add
 
@@ -284,7 +285,7 @@ class ColumnParallelLinear(torch.nn.Module):
 
     def forward(self, input_):
         # Set up backprop all-reduce.
-        if (self.MOE and self.world_size==1): # non-expert only tensor parallelism
+        if self.is_expert_without_slicing: # non-expert only tensor parallelism
             input_parallel = input_
         else:
             input_parallel = copy_to_tensor_model_parallel_region(input_)
@@ -293,7 +294,7 @@ class ColumnParallelLinear(torch.nn.Module):
 
         bias = self.bias if not self.skip_bias_add else None
         output_parallel = F.linear(input_parallel, self.weight, bias)
-        if self.gather_output and not (self.MoE and self.world_size==1):
+        if self.gather_output and not self.is_expert_without_slicing:
             # All-gather across the partitions.
             output = gather_from_tensor_model_parallel_region(output_parallel)
         else:
@@ -347,6 +348,7 @@ class RowParallelLinear(torch.nn.Module):
         # Divide the weight matrix along the last dimension.
         world_size = MoE_mp_size if MOE else get_tensor_model_parallel_world_size()
         self.MOE = MOE
+        self.is_expert_without_slicing =  self.MOE and self.world_size==1
 
         self.input_size_per_partition = divide(input_size, world_size)
         self.skip_bias_add = skip_bias_add
@@ -389,7 +391,7 @@ class RowParallelLinear(torch.nn.Module):
 
     def forward(self, input_):
         # Set up backprop all-reduce.
-        if self.input_is_parallel or (self.MOE and self.world_size == 1):
+        if self.input_is_parallel or self.is_expert_without_slicing:
             input_parallel = input_
         else:
             input_parallel = scatter_to_tensor_model_parallel_region(input_)
@@ -397,7 +399,7 @@ class RowParallelLinear(torch.nn.Module):
         output_parallel = F.linear(input_parallel, self.weight)
 
         # All-reduce across all the partitions.
-        if (self.MOE and self.world_size==1): # non-expert only tensor-parallelism
+        if self.is_expert_without_slicing: # non-expert only tensor-parallelism
             output_ = output_parallel
         else:
             output_ = reduce_from_tensor_model_parallel_region(output_parallel)
