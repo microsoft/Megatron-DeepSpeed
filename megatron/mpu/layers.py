@@ -284,15 +284,16 @@ class ColumnParallelLinear(torch.nn.Module):
 
     def forward(self, input_):
         # Set up backprop all-reduce.
-        if not self.MOE:
-            input_parallel = copy_to_tensor_model_parallel_region(input_)
-        else:
+        if (self.MOE and self.world_size==1): # non-expert only tensor parallelism
             input_parallel = input_
+        else:
+            input_parallel = copy_to_tensor_model_parallel_region(input_)
+
         # Matrix multiply.
 
         bias = self.bias if not self.skip_bias_add else None
         output_parallel = F.linear(input_parallel, self.weight, bias)
-        if self.gather_output and not self.MoE:
+        if self.gather_output and not (self.MoE and self.world_size==1):
             # All-gather across the partitions.
             output = gather_from_tensor_model_parallel_region(output_parallel)
         else:
@@ -388,19 +389,19 @@ class RowParallelLinear(torch.nn.Module):
 
     def forward(self, input_):
         # Set up backprop all-reduce.
-        if self.input_is_parallel:
+        if self.input_is_parallel or (self.MOE and self.world_size == 1):
             input_parallel = input_
         else:
-            assert not self.MoE
             input_parallel = scatter_to_tensor_model_parallel_region(input_)
         # Matrix multiply.
         output_parallel = F.linear(input_parallel, self.weight)
 
-        if not self.MOE:
-            # All-reduce across all the partitions.
-            output_ = reduce_from_tensor_model_parallel_region(output_parallel)
-        else:
+        # All-reduce across all the partitions.
+        if (self.MOE and self.world_size==1): # non-expert only tensor-parallelism
             output_ = output_parallel
+        else:
+            output_ = reduce_from_tensor_model_parallel_region(output_parallel)
+
         if not self.skip_bias_add:
             output = output_ + self.bias if self.bias is not None else output_
             output_bias = None
