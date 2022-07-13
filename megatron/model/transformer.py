@@ -59,7 +59,7 @@ class ParallelMLP(MegatronModule):
     applied.
     """
 
-    def __init__(self, init_method, output_layer_init_method, MOE=False, MoE_mp_size=1, ):
+    def __init__(self, init_method, output_layer_init_method, MOE=False, MoE_mp_size=1):
         super(ParallelMLP, self).__init__()
         args = get_args()
 
