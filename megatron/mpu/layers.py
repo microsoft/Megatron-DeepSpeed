@@ -393,7 +393,6 @@ class RowParallelLinear(torch.nn.Module):
             input_parallel = scatter_to_tensor_model_parallel_region(input_)
         # Matrix multiply.
         output_parallel = F.linear(input_parallel, self.weight)
-
         # All-reduce across all the partitions.
         if self.is_expert_without_slicing: # non-expert only tensor-parallelism
             output_ = output_parallel
