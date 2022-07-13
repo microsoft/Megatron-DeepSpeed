@@ -31,48 +31,6 @@ def _reduce(input_):
 
     return input_
 
-def _reduce_scatter(input_, dim):
-    """Reduce scatter the input tensor across model parallel group."""
-
-    # Bypass the function if we are using only 1 GPU.
-    if get_tensor_model_parallel_world_size()==1:
-        return input_
-
-    # All-reduce.
-    input_ = input_.contiguous()
-    total_chunks = get_tensor_model_parallel_world_size()
-    this_chunk = get_tensor_model_parallel_rank()
-
-    assert input_.shape[dim] % total_chunks == 0
-
-    chunk_size = input_.shape[dim]// total_chunks
-
-    input_list = [torch.narrow(input_, dim, i*chunk_size, chunk_size).contiguous() for i in range(total_chunks)]
-
-    output = torch.zeros_like(input_list[this_chunk], memory_format=torch.contiguous_format)
-    torch.distributed.reduce_scatter(output, input_list, group=get_tensor_model_parallel_group())
-    
-    return output
-
-def _gather_first_dim(input_, dim=0):
-    """Gather tensors and concatinate along the first dimension."""
-
-    world_size = get_tensor_model_parallel_world_size()
-    # Bypass the function if we are using only 1 GPU.
-    if world_size==1:
-        return input_
-    input_ = input_.contiguous()
-    # Size and dimension.
-    rank = get_tensor_model_parallel_rank()
-
-    tensor_list = [torch.empty_like(input_) for _ in range(world_size)]
-    tensor_list[rank] = input_
-    torch.distributed.all_gather(tensor_list, input_, group=get_tensor_model_parallel_group())
-
-    # Note: torch.cat already creates a contiguous tensor.
-    output = torch.cat(tensor_list, dim=dim).contiguous()
-  
-    return output
 
 def _split(input_):
     """Split the tensor along its last dimension and keep the
@@ -114,16 +72,6 @@ def _gather(input_):
 
     return output
 
-
-def _drop_tokens(input_, dim=0):
-    if get_tensor_model_parallel_world_size() == 1:
-        return input_ 
-    total_chunks = get_tensor_model_parallel_world_size()
-    this_chunk = get_tensor_model_parallel_rank()
-    assert input_.shape[dim] % total_chunks == 0
-    chunk_size = input_.shape[dim]// total_chunks
-
-    return torch.narrow(input_, dim, this_chunk*chunk_size, chunk_size)
 
 class _CopyToModelParallelRegion(torch.autograd.Function):
     """Pass the input to the model parallel region."""
@@ -188,53 +136,6 @@ class _GatherFromModelParallelRegion(torch.autograd.Function):
     def backward(ctx, grad_output):
         return _split(grad_output)
 
-class _ReduceScatterFromModelParallelRegion(torch.autograd.Function):
-    """Reduce scatter output of self attention for MoE"""
-
-    @staticmethod
-    def symbolic(graph, input_):
-        return _reduce_scatter(input_)
-    
-    @staticmethod
-    def forward(ctx, input_):
-        return _reduce_scatter(input_)
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        return _gather_first_dim(grad_output)
-
-class _AllGatherFromModelParallelRegion(torch.autograd.Function):
-    """Reduce scatter output of self attention for MoE"""
-
-    @staticmethod
-    def symbolic(graph, input_, dim):
-        return _gather_first_dim(input_, dim)
-    
-    @staticmethod
-    def forward(ctx, input_, dim):
-        ctx.dim = dim
-        return _gather_first_dim(input_, dim)
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        return drop_tokens(grad_output, ctx.dim), None
-
-class _DropTokens(torch.autograd.Function):
-    "Drop tokens (this is a hacky approach until we can do reduce scatter)"
-
-    @staticmethod
-    def symbolic(graph, input_, dim):
-        return _drop_tokens(input_, dim)
-
-    @staticmethod
-    def forward(ctx, input_, dim):
-        ctx.dim = dim
-        return _drop_tokens(input_, dim)
-
-    @staticmethod
-    def backward(ctx, input_):
-        return _gather_first_dim(input_, ctx.dim), None
-
 
 # -----------------
 # Helper functions.
@@ -254,13 +155,4 @@ def scatter_to_tensor_model_parallel_region(input_):
 def gather_from_tensor_model_parallel_region(input_):
     return _GatherFromModelParallelRegion.apply(input_)
 
-def reduce_scatter_from_tensor_model_parallel_region(input_):
-    return _ReduceScatterFromModelParallelRegion.apply(input_)
-
-def all_gather_from_tensor_model_parallel_region(input_, dim=0):
-    return _AllGatherFromModelParallelRegion.apply(input_, dim)
-
-def drop_tokens(input_, dim=0):
-    return _DropTokens.apply(input_, dim)
-
-    
+   
