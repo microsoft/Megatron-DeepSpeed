@@ -152,7 +152,6 @@ def reduce_from_tensor_model_parallel_region(input_):
 def scatter_to_tensor_model_parallel_region(input_):
     return _ScatterToModelParallelRegion.apply(input_)
 
+
 def gather_from_tensor_model_parallel_region(input_):
     return _GatherFromModelParallelRegion.apply(input_)
-
-   
