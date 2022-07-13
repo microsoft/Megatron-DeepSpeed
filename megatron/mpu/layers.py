@@ -385,6 +385,7 @@ class RowParallelLinear(torch.nn.Module):
             self.register_parameter('bias', None)
 
 
+
     def forward(self, input_):
         # Set up backprop all-reduce.
         if self.input_is_parallel or self.is_expert_without_slicing:
