@@ -130,7 +130,6 @@ def _initialize_affine_weight_cpu(weight, output_size, input_size,
         return master_weight
     return None
 
- 
 
 class VocabParallelEmbedding(torch.nn.Module):
     """Embedding parallelized in the vocabulary dimension.
@@ -337,8 +336,7 @@ class RowParallelLinear(torch.nn.Module):
                  input_is_parallel=False,
                  init_method=init.xavier_normal_, stride=1,
                  keep_master_weight_for_test=False,
-                 skip_bias_add=False, MOE=False, MoE_mp_size=1,
-                ):
+                 skip_bias_add=False, MOE=False, MoE_mp_size=1):
         super(RowParallelLinear, self).__init__()
 
         # Keep input parameters
@@ -357,9 +355,7 @@ class RowParallelLinear(torch.nn.Module):
         # Note: torch.nn.functional.linear performs XA^T + b and as a result
         # we allocate the transpose.
         # Initialize weight.
-        
         args = get_args()
-
         if args.use_cpu_initialization:
             self.weight = Parameter(torch.empty(self.output_size,
                                                 self.input_size_per_partition,
