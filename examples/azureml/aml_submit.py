@@ -77,20 +77,17 @@ megatron_ds_env.environment_variables['UCX_NET_DEVICES']='eth0'
 #-------------------------------------------------------------------------------
 # Training Settings and Arguments
 #-------------------------------------------------------------------------------
-node_count = 8
-total_proceses_count = 64
-micro_batch_size = 8
+node_count = 2
+total_proceses_count = 16
+micro_batch_size = 1
 global_batch_size = micro_batch_size * total_proceses_count
 tensorboard_dir = '/tmp/outputs/tensorboard'
 
 run_args = ['--tensor-model-parallel-size', 1, 
             '--pipeline-model-parallel-size', 1, 
-            '--num-layers', 96, 
+            '--num-layers', 20,
             '--hidden-size', 12288,
-            '--num-attention-heads', 96, 
-            #'--num-layers', 10,
-            #'--hidden-size', 2048,
-            #'--num-attention-heads', 16, 
+            '--num-attention-heads', 96,
             '--seq-length', 1024,
             '--loss-scale', 15, 
             '--max-position-embeddings', 1024, 
@@ -127,6 +124,60 @@ run_args = ['--tensor-model-parallel-size', 1,
             '--exit-interval', 5000,
 ]
 
+#-------------------------------------------------------------------------------
+# DeepSpeed ds_config.json
+#-------------------------------------------------------------------------------
+import json
+ds_config = {
+    "train_batch_size" : global_batch_size,
+    "train_micro_batch_size_per_gpu": micro_batch_size,
+    "steps_per_print": 1,
+    "gradient_accumulation_steps": 1,
+    "zero_optimization": {
+      "stage": 3,
+      "stage3_max_live_parameters": 3e9,
+      "stage3_max_reuse_distance": 3e9,
+      "stage3_param_persitence_threshold": 1e5,
+      "stage3_prefetch_bucket_size": 5e7,
+      "contiguous_gradients": True,
+      "overlap_comm": True,
+      "reduce_bucket_size": 90000000,
+      "sub_group_size": 1e9,
+      "offload_optimizer": {
+        "device": "none",
+        "buffer_count": 4,
+        "pipeline_read": False,
+        "pipeline_write": False,
+        "pin_memory": True
+      }
+    },
+    "gradient_clipping": 1.0,
+    "fp16": {
+      "enabled": True,
+      "initial_scale_power" : 15,
+      "loss_scale_window": 1000,
+      "hysteresis": 2,
+      "min_loss_scale": 1
+    },
+    "wall_clock_breakdown": True,
+    "zero_allow_untested_optimizer": False,
+    "aio": {
+      "block_size": 1048576,
+      "queue_depth": 16,
+      "single_submit": False,
+      "overlap_events": True,
+      "thread_count": 2
+    }
+  }
+
+# Place ds_config.json in the same folder as pretrain_gpt.py (script to run)
+ds_config_path = '../../ds_config.json'
+with open(ds_config_path, 'w') as fp:
+    json.dump(ds_config, fp, indent=4)
+
+#-------------------------------------------------------------------------------
+# Create ScriptRunConfig
+#-------------------------------------------------------------------------------
 distr_config = PyTorchConfiguration(process_count=total_proceses_count, node_count=node_count)
 
 megatron_ds_src = ScriptRunConfig(source_directory='../../',
@@ -137,9 +188,9 @@ megatron_ds_src = ScriptRunConfig(source_directory='../../',
                       distributed_job_config=distr_config)
 
 #-------------------------------------------------------------------------------
-# Create experiment and submit
+# Submit experiment
 #-------------------------------------------------------------------------------
-experiment_name = 'megatron-175b-ds-benchmark-ptca'
+experiment_name = 'megatron-ds'
 experiment = Experiment(ws, name=experiment_name)
 
 run = experiment.submit(megatron_ds_src, tags={'bs':micro_batch_size, 'gpus':total_proceses_count})

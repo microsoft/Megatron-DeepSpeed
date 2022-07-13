@@ -4,10 +4,10 @@ USER root:root
 
 RUN pip install pybind11
 
-RUN pip install git+https://github.com/microsoft/DeepSpeed.git@azure
+RUN pip install git+https://github.com/microsoft/DeepSpeed.git
 
 # add a100-topo.xml
-RUN mkdir /opt/microsoft/
+RUN mkdir -p /opt/microsoft/
 RUN wget -O /opt/microsoft/a100-topo.xml https://hpcbenchmarks.blob.core.windows.net/bookcorpus/data/a100-topo.xml
 
 # to use on A100, enable env var below in your job
