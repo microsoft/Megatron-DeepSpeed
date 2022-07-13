@@ -78,9 +78,9 @@ megatron_ds_env.environment_variables['UCX_NET_DEVICES']='eth0'
 # Training Settings and Arguments
 #-------------------------------------------------------------------------------
 node_count = 2
-total_proceses_count = 16
+total_processes_count = 16
 micro_batch_size = 1
-global_batch_size = micro_batch_size * total_proceses_count
+global_batch_size = micro_batch_size * total_processes_count
 tensorboard_dir = '/tmp/outputs/tensorboard'
 
 run_args = ['--tensor-model-parallel-size', 1, 
@@ -178,7 +178,7 @@ with open(ds_config_path, 'w') as fp:
 #-------------------------------------------------------------------------------
 # Create ScriptRunConfig
 #-------------------------------------------------------------------------------
-distr_config = PyTorchConfiguration(process_count=total_proceses_count, node_count=node_count)
+distr_config = PyTorchConfiguration(process_count=total_processes_count, node_count=node_count)
 
 megatron_ds_src = ScriptRunConfig(source_directory='../../',
                       script='pretrain_gpt.py',
@@ -193,4 +193,4 @@ megatron_ds_src = ScriptRunConfig(source_directory='../../',
 experiment_name = 'megatron-ds'
 experiment = Experiment(ws, name=experiment_name)
 
-run = experiment.submit(megatron_ds_src, tags={'bs':micro_batch_size, 'gpus':total_proceses_count})
+run = experiment.submit(megatron_ds_src, tags={'bs':micro_batch_size, 'gpus':total_processes_count})
