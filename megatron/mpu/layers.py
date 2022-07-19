@@ -230,7 +230,7 @@ class ColumnParallelLinear(torch.nn.Module):
     def __init__(self, input_size, output_size, bias=True, gather_output=True,
                  init_method=init.xavier_normal_, stride=1,
                  keep_master_weight_for_test=False,
-                 skip_bias_add=False, MOE=False, MoE_mp_size=1):
+                 skip_bias_add=False, moe=False, enable_expert_tensor_parallelism=False):
         super(ColumnParallelLinear, self).__init__()
 
         # Keep input parameters
@@ -238,9 +238,13 @@ class ColumnParallelLinear(torch.nn.Module):
         self.output_size = output_size
         self.gather_output = gather_output
         # Divide the weight matrix along the last dimension.
-        world_size = MoE_mp_size if MOE else get_tensor_model_parallel_world_size()
-        self.MOE = MOE
-        self.is_expert_without_slicing =  self.MOE and world_size==1
+        #world_size = MoE_mp_size if MOE else get_tensor_model_parallel_world_size()
+        if moe and (not enable_expert_tensor_parallelism):
+            world_size = 1
+        else:
+            world_size = get_tensor_model_parallel_world_size()
+
+        self.is_expert_without_slicing =  moe and world_size==1
         self.output_size_per_partition = divide(output_size, world_size)
         self.skip_bias_add = skip_bias_add
 
@@ -336,7 +340,7 @@ class RowParallelLinear(torch.nn.Module):
                  input_is_parallel=False,
                  init_method=init.xavier_normal_, stride=1,
                  keep_master_weight_for_test=False,
-                 skip_bias_add=False, MOE=False, MoE_mp_size=1):
+                 skip_bias_add=False, moe=False, enable_expert_tensor_parallelism=False):
         super(RowParallelLinear, self).__init__()
 
         # Keep input parameters
@@ -344,9 +348,13 @@ class RowParallelLinear(torch.nn.Module):
         self.output_size = output_size
         self.input_is_parallel = input_is_parallel
         # Divide the weight matrix along the last dimension.
-        world_size = MoE_mp_size if MOE else get_tensor_model_parallel_world_size()
-        self.MOE = MOE
-        self.is_expert_without_slicing =  self.MOE and world_size==1
+
+        if moe and (not enable_expert_tensor_parallelism):
+            world_size = 1
+        else:
+            world_size = get_tensor_model_parallel_world_size()
+
+        self.is_expert_without_slicing = moe and world_size==1
 
         self.input_size_per_partition = divide(input_size, world_size)
         self.skip_bias_add = skip_bias_add
