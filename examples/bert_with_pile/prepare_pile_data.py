@@ -72,7 +72,8 @@ if __name__ == '__main__':
         selected_chunk = range(int(sys.argv[2]), int(sys.argv[3]))
     else:
         # "python prepare_pile_data.py 2 5 8" means process chunk 2, 5 and 8.
-        selected_chunk = [int(x) for x in sys.argv[2:]]
+        selected_chunk = [int(x) for x in sys.argv[1:]]
+    print("selected_chunk: ", selected_chunk)
     # Number of process when preprocessing. Adjust based on your CPU.
     num_workers = 40
     # Where the raw Pile data can be downloaded. The url may change in future.
