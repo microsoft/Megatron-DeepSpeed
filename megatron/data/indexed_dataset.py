@@ -407,9 +407,9 @@ class MMapIndexedDataset(torch.utils.data.Dataset):
                     del sizes32
 
                     pointers = self._get_pointers(sizes, np.int64)
+                    del sizes
                     self._file.write(pointers.tobytes(order='C'))
                     del pointers
-                    del sizes
 
                     doc_idx = np.array(doc_idx, dtype=np.int64)
                     self._file.write(doc_idx.tobytes(order='C'))
