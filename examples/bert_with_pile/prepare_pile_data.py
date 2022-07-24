@@ -3,6 +3,8 @@ import sys
 import time
 import os
 
+import sys
+sys.path.insert(1, '../../')
 from megatron.data import indexed_dataset
 
 def pile_download(download_url, file_path, i):
@@ -11,8 +13,7 @@ def pile_download(download_url, file_path, i):
     download_path = f"{download_url}{i:02}.jsonl.zst"
     if not os.path.exists(zstd_file_path):
         os.system(f"wget -P {file_path} {download_path}")
-        print("Finished downloading chunk {} in {} sec".format(
-            i, time.time() - start))
+        print(f"Finished downloading chunk {i} in {time.time() - start} sec")
 
 def pile_decompress(download_url, file_path, i):
     zstd_file_path = f"{file_path}{i:02}.jsonl.zst"
@@ -26,8 +27,7 @@ def pile_decompress(download_url, file_path, i):
             with open(output_path, 'wb') as destination:
                 decomp.copy_stream(compressed, destination)
         os.remove(zstd_file_path)
-        print("Finished decompressing chunk {} in {} sec".format(
-            i, time.time() - start))
+        print(f"Finished decompressing chunk {i} in {time.time() - start} sec")
 
 def pile_preprocess(download_url, file_path, vocab_file, num_workers, i):
     json_file_path = f"{file_path}{i:02}.jsonl"
@@ -59,8 +59,7 @@ def pile_preprocess(download_url, file_path, vocab_file, num_workers, i):
                 os.remove(f"{output_prefix}_text_sentence.idx")
             if os.path.exists(f"{output_prefix}_text_sentence.bin"):
                 os.remove(f"{output_prefix}_text_sentence.bin")
-        print("Finished preprocessing chunk {} in {} sec".format(
-            i, time.time() - start))
+        print(f"Finished preprocessing chunk {i} in {time.time() - start} sec")
 
 def pile_merge(file_path):
     start = time.time()
@@ -79,7 +78,7 @@ def pile_merge(file_path):
         builder.merge_file_(chunk_file)
     print("Finalizing merged file ...")
     builder.finalize(f"{file_path}pile_bert_train_text_sentence.idx")
-    print("Finished merging in {} sec".format(time.time() - start))
+    print(f"Finished merging in {time.time() - start} sec")
     # After verifying the merged data with real training, you may want to
     # delete the data chunks.
     # for i in range(num_chunks):
@@ -89,10 +88,9 @@ def pile_merge(file_path):
 
 if __name__ == '__main__':
     # Path to download and store all the output files during the whole process.
-    # Estimated max storage usage would be around 1.6 TB. Memory usage is
-    # proportional to the num_workers below (can be as high as O(300GB) if
-    # num_workers is around 20).
-    # file_path = "/vc_data_blob/users/conglli/the_pile_bert/"
+    # Estimated max storage usage would be around 1.6 TB (or 780GB if skip the
+    # final merge). Memory usage is proportional to the num_workers below (can
+    # be as high as O(300GB) if num_workers is around 20).
     file_path = "/blob/data/the_pile_bert/"
     # The raw Pile data has 30 compressed .zst chunks. To run on single
     # machine for all chunks, run "python prepare_pile_data.py range 0 30".
@@ -100,7 +98,11 @@ if __name__ == '__main__':
     # processing one chunk can take hours. The whole process only uses CPU.
     if sys.argv[1] == "merge":
         # "python prepare_pile_data.py merge" means merge all 30 processed data
-        # chunks. Run it only after all 30 chunks are preprocessed.
+        # chunks. Run it only after all 30 chunks are preprocessed. The memory
+        # usage during merge is about 600GB. If you don't have enough memory,
+        # one solution is to directly use the 30 data chunks as multiple
+        # datasets. See '--data-path' in
+        # github.com/microsoft/Megatron-DeepSpeed/blob/main/megatron/arguments.py
         pile_merge(file_path)
     else:
         if sys.argv[1] == "range":
