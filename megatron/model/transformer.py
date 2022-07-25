@@ -449,14 +449,6 @@ class ParallelTransformerLayer(MegatronModule):
                                output_layer_init_method)
         else:
             enable_expert_tensor_parallelism = args.enable_expert_tensor_parallelism
-            ## set correct ep_size here because MoE.__init__ does not have access to mpu
-            if enable_expert_tensor_parallelism:
-                ## the max allowed value of ep_size is the degree of data parallelism
-                ep_size = min(args.moe_expert_parallel_size, mpu.get_data_parallel_world_size())
-            else:
-                # since expert tensor parallelism is disabled expert parallelism can
-                # stretch into  data parallel dimension as well
-                ep_size = min(args.moe_expert_parallel_size, mpu.get_data_parallel_world_size() * mpu.get_tensor_model_parallel_world_size())
             self.mlp = MoE(args.hidden_size,
                             ParallelMLP(init_method,
                                 output_layer_init_method=output_layer_init_method,
