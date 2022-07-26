@@ -455,7 +455,7 @@ class ParallelTransformerLayer(MegatronModule):
                                 moe=True,
                                 enable_expert_tensor_parallelism=enable_expert_tensor_parallelism),
                             num_experts=self.num_experts, 
-                            ep_size=ep_size,
+                            ep_size=args.moe_expert_parallel_size,
                             k=args.topk,
                             use_residual=(args.mlp_type == 'residual'),
                             capacity_factor=args.moe_train_capacity_factor,
