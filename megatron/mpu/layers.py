@@ -240,7 +240,7 @@ class ColumnParallelLinear(torch.nn.Module):
         # Divide the weight matrix along the last dimension.
         if moe and (not enable_expert_tensor_parallelism):
             world_size = 1
-            self.is_expert_without_slicing =  moe and world_size==1
+            self.is_expert_without_slicing = True
         else:
             world_size = get_tensor_model_parallel_world_size()
             self.is_expert_without_slicing = False
