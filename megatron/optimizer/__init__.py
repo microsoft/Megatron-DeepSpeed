@@ -12,6 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import torch
 
 from apex.optimizers import FusedAdam as Adam
 from apex.optimizers import FusedSGD as SGD
@@ -66,20 +67,25 @@ def get_megatron_optimizer(model):
                                        lr=args.lr,
                                        weight_decay=args.weight_decay)
     else:
-        if args.optimizer == 'adam':
-            optimizer = Adam(param_groups,
-                            lr=args.lr,
-                            weight_decay=args.weight_decay,
-                            betas=(args.adam_beta1, args.adam_beta2),
-                            eps=args.adam_eps)
-        elif args.optimizer == 'sgd':
-            optimizer = SGD(param_groups,
-                            lr=args.lr,
-                            weight_decay=args.weight_decay,
-                            momentum=args.sgd_momentum)
-        else:
-            raise Exception('{} optimizer is not supported.'.format(
-            args.optimizer))
+        optimizer = torch.optim.AdamW(param_groups,
+                         lr=args.lr,
+                         weight_decay=args.weight_decay,
+                         betas=(args.adam_beta1, args.adam_beta2),
+                         eps=args.adam_eps)
+        #if args.optimizer == 'adam':
+        #    optimizer = Adam(param_groups,
+        #                    lr=args.lr,
+        #                    weight_decay=args.weight_decay,
+        #                    betas=(args.adam_beta1, args.adam_beta2),
+        #                    eps=args.adam_eps)
+        #elif args.optimizer == 'sgd':
+        #    optimizer = SGD(param_groups,
+        #                    lr=args.lr,
+        #                    weight_decay=args.weight_decay,
+        #                    momentum=args.sgd_momentum)
+        #else:
+        #    raise Exception('{} optimizer is not supported.'.format(
+        #    args.optimizer))
 
     if args.deepspeed:
         return optimizer
