@@ -10,30 +10,45 @@ global_batch_size=1024
 lr=1e-4
 min_lr=1e-5
 
+## init_std is the standard deviation for weight initialization. Usually larger
+## model needs lower std. Here we roughly follow a heuristic equation of
+## sqrt(1/3/hidden_size) from https://arxiv.org/pdf/2201.11990.pdf
+
+## In addition, we find that the 3.9B model (even after tuning init_std) has
+## NaN loss issue from the beginning thus unable to train. This is probably
+## because in this example we use the public Pile data, which is a more diverse
+## (and potentially more noisy) data than what used in Megatron paper. One
+## potential solution is only use the sub datasets in Pile that are also
+## used by Megatron paper.
+
 ## BERT 110M (same config as original BERT-Base model)
 ## This config is not included in Megatron-LM paper
 # model_size=0.11
 # num_layers=12
 # hidden_size=768
 # num_attn_heads=12
+# init_std=0.02
 
 ## BERT 336M (same config as original BERT-Large model)
 model_size=0.336
 num_layers=24
 hidden_size=1024
 num_attn_heads=16
+init_std=0.02
 
 ## BERT 1.3B
 # model_size=1.3
 # num_layers=24
 # hidden_size=2048
 # num_attn_heads=32
+# init_std=0.013
 
 ## BERT 3.9B
 # model_size=3.9
 # num_layers=48
 # hidden_size=2560
 # num_attn_heads=40
+# init_std=0.011
 ###############################################################################
 ### Training duration configs
 ## The main termination condition, original Megatron paper trains for 2M iters.
@@ -53,6 +68,7 @@ lr_decay_style="linear"
 mp_size=1
 
 ## Pipeline parallelism. To disable PP, set pp_size to 1 and no_pp to true.
+## Currently there is no pipeline parallelism support for BERT model.
 pp_size=1
 no_pp="true"
 
@@ -147,6 +163,7 @@ megatron_options=" \
     --override-lr-scheduler \
     --adam-beta1 0.9 \
     --adam-beta2 0.999 \
+    --init-method-std ${init_std} \
     --tensor-model-parallel-size ${mp_size} \
     --lr-decay-iters ${lr_decay_iters} \
     --lr-warmup-iters ${lr_warmup_iters} \
