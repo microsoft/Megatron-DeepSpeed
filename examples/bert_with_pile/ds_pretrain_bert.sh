@@ -68,7 +68,9 @@ lr_decay_style="linear"
 mp_size=1
 
 ## Pipeline parallelism. To disable PP, set pp_size to 1 and no_pp to true.
-## Currently there is no pipeline parallelism support for BERT model.
+## Currently pipeline parallelism is not supported for BERT model: DeepSpeed's
+## pipeline parallelism is only integrated with the GPT case, and currently
+## DeepSpeed is not integrated with Megatron's own pipeline parallelism.
 pp_size=1
 no_pp="true"
 
@@ -206,7 +208,7 @@ megatron_options="${megatron_options} \
 fi
 
 template_json="ds_config_bert_TEMPLATE.json"
-config_json="ds_config_${jobname}.json"
+config_json="ds_config_bert_bsz${global_batch_size}_mbsz${batch_size}_log${log_interval}_zero${zero_stage}.json"
 if [[ $zero_stage -gt 0 ]]; then
 sed "s/CONFIG_BATCH_SIZE/${global_batch_size}/" ${template_json} \
     | sed "s/CONFIG_MBSIZE/${batch_size}/" \
