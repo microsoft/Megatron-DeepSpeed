@@ -235,7 +235,7 @@ def forward_step(data_iterator, model):
     mos_loss = 0
     if args.mos or args.kd:
         assert model.training
-        if args.teacher_model is not None:
+        if args.teacher_forward and args.teacher_model is not None:
             mos_loss = calculate_mos_loss(args, stu_output,
                 args.teacher_model[0], tokens, position_ids, attention_mask)
     

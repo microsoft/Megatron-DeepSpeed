@@ -538,9 +538,13 @@ def train_step(forward_step_func, data_iterator,
             forward_backward_func = forward_backward_pipelining_without_interleaving
     else:
         forward_backward_func = forward_backward_no_pipelining
+    if args.mos or args.kd:
+        args.teacher_forward = True
     losses_reduced = forward_backward_func(
         forward_step_func, data_iterator, model,
         optimizer, timers, forward_only=False)
+    if args.mos or args.kd:
+        args.teacher_forward = False
 
     # All-reduce if needed.
     if not args.deepspeed and args.DDP_impl == 'local':
