@@ -51,9 +51,11 @@ from megatron.utils import calc_params_l2_norm
 from megatron.schedules import forward_backward_no_pipelining
 from megatron.schedules import forward_backward_pipelining_without_interleaving
 from megatron.schedules import forward_backward_pipelining_with_interleaving
-from megatron.utils import report_memory, flops_calculator
+from megatron.utils import report_memory, throughput_calculator, checkpoint_throughput_calculator
 
 import deepspeed
+from deepspeed.compression.compress import init_compression, redundancy_clean
+
 
 
 def print_datetime(string):
@@ -123,7 +125,8 @@ def pretrain(train_valid_test_dataset_provider,
                 import CurriculumScheduler
             args.curriculum_scheduler = CurriculumScheduler( \
                 args.deepspeed_configuration["curriculum_learning"])
-
+        if "compression_training" in args.deepspeed_configuration:
+            args.compression_training = True
 
     # Model, optimizer, and learning rate.
     timers('model-and-optimizer-setup').start()
@@ -150,7 +153,7 @@ def pretrain(train_valid_test_dataset_provider,
     print_datetime('after dataloaders are built')
 
     args.teacher_model = None
-    if args.mos: # Set up teacher model
+    if args.mos or args.kd: # Set up teacher model
         args.teacher_model = setup_teacher_model(args, model_provider)
 
     # Print setup timing.
@@ -170,6 +173,16 @@ def pretrain(train_valid_test_dataset_provider,
         evaluate_and_print_results(prefix, forward_step_func,
                                    valid_data_iterator, model,
                                    iteration, False)
+    
+    # Clean the model and do evaluation again
+    if args.compression_training:
+        model = [redundancy_clean(model[0], args.deepspeed_config, mpu)]
+        if args.do_valid:
+            prefix = 'the end of training and after model cleaning for val data'
+            evaluate_and_print_results(prefix, forward_step_func,
+                                    valid_data_iterator, model,
+                                    iteration, False)
+
 
     if args.save and iteration != 0:
         save_checkpoint(iteration, model, optimizer, lr_scheduler)
@@ -400,6 +413,33 @@ def setup_model_and_optimizer(model_provider_func, teacher=False):
 
     model = get_model(model_provider_func)
 
+    # initialize the compression here
+    student_global_steps = 0
+    if args.kd or args.mos:
+        model, _, _, _ = deepspeed.initialize(
+                model=model[0],
+                args=args,
+                mpu=mpu if args.no_pipeline_parallel else None
+            )
+        model = [model]
+        if args.load is not None:
+            args.iteration = load_checkpoint(model, None, None, strict=False)
+        else:
+            args.iteration = 0
+        student_global_steps = model[0].global_steps
+        print_rank_0('***>>>>> Student model, global step:{}'.format(student_global_steps))
+
+
+    if args.compression_training:
+        model, _, _, _ = deepspeed.initialize(
+            model=model[0],
+            args=args,
+            mpu=mpu if args.no_pipeline_parallel else None
+        )
+        model = [model]
+        model = [init_compression(model[0].module, args.deepspeed_config, mpu)]
+    
+
     unwrapped_model = unwrap_model(model,
                                    (torchDDP, LocalDDP, Float16Module))
 
@@ -408,11 +448,12 @@ def setup_model_and_optimizer(model_provider_func, teacher=False):
         lr_scheduler = None
     else:
         if teacher:
-            optimizer = None
+          optimizer = None
         else:
-            optimizer = get_megatron_optimizer(unwrapped_model)
+          optimizer = get_megatron_optimizer(unwrapped_model)
         lr_scheduler = get_learning_rate_scheduler(optimizer)
-    
+
+
     if args.deepspeed:
         print_rank_0("DeepSpeed is enabled.")
         pp = mpu.get_pipeline_model_parallel_world_size()
@@ -432,21 +473,23 @@ def setup_model_and_optimizer(model_provider_func, teacher=False):
             assert model.grid.get_data_parallel_rank() == mpu.get_data_parallel_rank()
         model = [model]
 
-    if args.load is not None:
-        timers = get_timers()
-        # Extra barrier is added to make sure all ranks report the
-        # max time.
-        torch.distributed.barrier()
-        timers('load-checkpoint').start()
-        if args.mos:
-            args.iteration = load_checkpoint(model, optimizer, lr_scheduler, strict=False, load_only_weights=False)
-        else:
+    # Compression has its own checkpoint loading path (e.g, loading both teacher and student models). So if compression is enabled, we skip the following checkpoint loading.
+    no_post_init_checkpoint_loading = args.kd or args.mos
+    if not no_post_init_checkpoint_loading:
+        if args.load is not None:
+            timers = get_timers()
+            # Extra barrier is added to make sure all ranks report the
+            # max time.
+            torch.distributed.barrier()
+            timers('load-checkpoint').start()
             args.iteration = load_checkpoint(model, optimizer, lr_scheduler)
-        torch.distributed.barrier()
-        timers('load-checkpoint').stop()
-        timers.log(['load-checkpoint'])
+            torch.distributed.barrier()
+            timers('load-checkpoint').stop()
+            timers.log(['load-checkpoint'])
+        else:
+            args.iteration = 0
     else:
-        args.iteration = 0
+        model[0].global_steps = student_global_steps
 
     # We only support local DDP with multiple micro-batches.
     if len(model) > 1 or mpu.get_pipeline_model_parallel_world_size() > 1:
@@ -635,11 +678,11 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
     add_to_logging('optimizer-copy-main-to-model-params')
     add_to_logging('optimizer')
     add_to_logging('batch-generator')
+    add_to_logging('save-checkpoint')
 
     # Calculate batch size.
     batch_size = args.micro_batch_size * args.data_parallel_size * \
         get_num_microbatches()
-
     total_iterations = total_loss_dict[advanced_iters_key] + \
                        total_loss_dict[skipped_iters_key]
 
@@ -771,25 +814,17 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
     if iteration % args.log_interval == 0:
         elapsed_time = timers('interval-time').elapsed()
         elapsed_time_per_iteration = elapsed_time / total_iterations
-
         seq_len = args.curriculum_seqlen if args.curriculum_learning else args.seq_length
         hidden_size = args.hidden_size
         num_layers = args.num_layers
         vocab_size = args.padded_vocab_size
 
+        samples_per_sec, tflops, approx_parameters_in_billions = throughput_calculator(model, args, elapsed_time, total_iterations)
+
         # Compute throughput.
-        samples_per_sec = batch_size / elapsed_time_per_iteration
         samples_per_sec_per_replica = samples_per_sec / args.data_parallel_size
         tokens_per_sec = samples_per_sec * seq_len
         tokens_per_sec_per_replica = tokens_per_sec / args.data_parallel_size
-
-        # General TFLOPs formula (borrowed from Equation 3 in Section 5.1 of
-        # https://arxiv.org/pdf/2104.04473.pdf).
-        # The factor of 4 is when used with activation check-pointing,
-        # otherwise it will be 3.
-        checkpoint_activations_factor = 4 if args.checkpoint_activations else 3
-        flops_per_iteration = (24 * checkpoint_activations_factor * batch_size * seq_len * num_layers * (hidden_size**2)) * (1. + (seq_len / (6. * hidden_size)) + (vocab_size / (16. * num_layers * hidden_size)))
-        tflops = flops_per_iteration / (elapsed_time_per_iteration * args.world_size * (10**12))
 
         # only the last rank process has a non-None _GLOBAL_TENSORBOARD_WRITER
         if writer and is_last_rank():
@@ -842,7 +877,7 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
             report_memory('(after {} iterations)'.format(iteration))
             report_memory_flag = False
         timers.log(timers_to_log, normalizer=args.log_interval)
-        flops_calculator(model, args, elapsed_time)
+
 
     return report_memory_flag
 
@@ -856,6 +891,7 @@ def save_checkpoint_and_time(iteration, model, optimizer, lr_scheduler):
     save_checkpoint(iteration, model, optimizer, lr_scheduler)
     torch.distributed.barrier()
     timers('save-checkpoint').stop()
+    checkpoint_throughput_calculator(model, timers('save-checkpoint').elapsed(reset=False))
     timers.log(['save-checkpoint'])
 
 
