@@ -145,4 +145,6 @@ options="${options} \
     --no-pipeline-parallel"
 fi
 
+# After the fine-tuning finishes, you can find the dev set accuracy numbers by
+# "grep -e "overall:" -e "metrics for" ${checkpoint_path}/output.log"
 deepspeed ../../tasks/main.py ${options} &> ${checkpoint_path}/output.log
