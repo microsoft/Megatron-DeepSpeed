@@ -1,5 +1,5 @@
 ## Megatron-DeepSpeed
-DeepSpeed version of NVIDIA's Megatron-LM that adds additional support for several features such as MoE model training, Curriculum Learning, 3D Parallelism, and others. The ```Megatron-DeepSpeed/examples/`` folder includes example scripts about the features supported by DeepSpeed.
+DeepSpeed version of NVIDIA's Megatron-LM that adds additional support for several features such as MoE model training, Curriculum Learning, 3D Parallelism, and others. The ```Megatron-DeepSpeed/examples/``` folder includes example scripts about the features supported by DeepSpeed.
 
 ### Run on Azure and AzureML
 To try out DeepSpeed on Azure, this fork of Megatron offers easy-to-use recipes and bash scripts. We strongly recommend to start with AzureML recipe in the ```examples/azureml``` folder. If you have a custom infrastructure (e.g. HPC clusters) or Azure VM based environment, please refer to the bash scripts in the ```examples/azure``` folder. 

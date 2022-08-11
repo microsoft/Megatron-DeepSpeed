@@ -10,16 +10,16 @@ If you have a custom infrastructure (e.g. HPC clusters) or Azure VM and VMSS bas
 
 ### MoE
 
-Please see the ```MoE``` folder for different training recipes and scripts for Mixture-of-expert based models. 
+Please see the ```MoE``` folder for different training recipes and scripts for Mixture-of-expert based models and dense models. These recipes are for GPT-style NLG models.
 
 ### Curriculum Learning
 
-Curriculum learning recipes are in the ```curriculum_learning``` folder. Please refer to the detailed tutorials linked inside. 
+Curriculum learning recipes are in the ```curriculum_learning``` folder. Please refer to the detailed tutorials linked inside. These recipes are for GPT-style NLG models.
 
 ### Model Compression
 
-The ```compression``` folder includes examples about layer reduction for task-agnostic compression. Please refer to [this tutorial](https://www.deepspeed.ai/tutorials/model-compression/#11-layer-reduction) about the DeepSpeed Model Compression Library.
+The ```compression``` folder includes examples about layer reduction for task-agnostic compression. Please refer to [this tutorial](https://www.deepspeed.ai/tutorials/model-compression/#11-layer-reduction) about the DeepSpeed Model Compression Library. These recipes are for GPT-style NLG models.
 
 ### BERT example
 
-The ```bert_with_pile``` folder includes examples about BERT pre-training (using the public Pile data or user's own data) with DeepSpeed integration. Please refer to the readme in the folder for tutorial.
+The ```bert_with_pile``` folder includes examples about BERT-style model pre-training (using the public Pile data or user's own data) with DeepSpeed integration. Please refer to the readme in the folder for tutorial.
