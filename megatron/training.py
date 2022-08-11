@@ -152,6 +152,10 @@ def pretrain(train_valid_test_dataset_provider,
     timers('train/valid/test-data-iterators-setup').stop()
     print_datetime('after dataloaders are built')
 
+    # args.teacher_model is used as global variable to pass the teacher model
+    # for knowledge distillation. Users do not need to set it in the command
+    # line to use kd, but users do need to provide teacher model configurations
+    # like args.num_layers_teacher as described in setup_teacher_model()
     args.teacher_model = None
     if args.mos or args.kd: # Set up teacher model
         args.teacher_model = setup_teacher_model(args, model_provider)
@@ -539,6 +543,9 @@ def train_step(forward_step_func, data_iterator,
     else:
         forward_backward_func = forward_backward_no_pipelining
     if args.mos or args.kd:
+        # args.teacher_forward is used as global variable to enable kd loss
+        # calculation in forward pass. Users do not need to set it in the
+        # command line to use kd.
         args.teacher_forward = True
     losses_reduced = forward_backward_func(
         forward_step_func, data_iterator, model,
