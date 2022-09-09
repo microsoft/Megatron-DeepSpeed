@@ -14,7 +14,7 @@
       "reduce_bucket_size": 90000000,
       "sub_group_size": 1e9,
       "offload_optimizer": {
-        "device": "none",
+        "device": "cpu",
         "buffer_count": 4,
         "pipeline_read": false,
         "pipeline_write": false,
