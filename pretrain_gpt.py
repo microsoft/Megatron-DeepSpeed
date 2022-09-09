@@ -83,7 +83,7 @@ def model_provider(pre_process=True, post_process=True):
             )
 
     if args.ort:
-        from torch_ort import ORTModule
+        from onnxruntime.training.ortmodule import ORTModule
         model = ORTModule(model)
 
     see_memory_usage(f"After Building Model", force=True)

@@ -65,7 +65,7 @@ merge_file = merge_file_dataset.as_download()
 # Setup training environment
 #-------------------------------------------------------------------------------
 megatron_ds_env = Environment.from_dockerfile(name='megatron-ds-ptca', dockerfile='Dockerfile.dockerfile')
-megatron_ds_env.register(ws).build(ws).wait_for_completion()  # Comment this out if environment already exists
+#megatron_ds_env.register(ws).build(ws).wait_for_completion()  # Comment this out if environment already exists
 
 megatron_ds_env.environment_variables['NCCL_DEBUG'] = 'WARN'
 megatron_ds_env.environment_variables['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
@@ -73,7 +73,6 @@ megatron_ds_env.environment_variables['NCCL_SOCKET_IFNAME'] = 'eth0'
 megatron_ds_env.environment_variables['NCCL_IB_PCI_RELAXED_ORDERING']='1'
 megatron_ds_env.environment_variables['UCX_TLS']='tcp'
 megatron_ds_env.environment_variables['UCX_NET_DEVICES']='eth0'
-megatron_ds_env.environment_variables['ORTMODULE_FALLBACK_POLICY']='FALLBACK_DISABLE'
 
 #-------------------------------------------------------------------------------
 # Training Settings and Arguments
