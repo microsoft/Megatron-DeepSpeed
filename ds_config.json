@@ -1,0 +1,41 @@
+{
+    "train_batch_size" : global_batch_size,
+    "train_micro_batch_size_per_gpu": micro_batch_size,
+    "steps_per_print": 1,
+    "gradient_accumulation_steps": 1,
+    "zero_optimization": {
+      "stage": 3,
+      "stage3_max_live_parameters": 3e9,
+      "stage3_max_reuse_distance": 3e9,
+      "stage3_param_persistence_threshold": 1e5,
+      "stage3_prefetch_bucket_size": 5e7,
+      "contiguous_gradients": True,
+      "overlap_comm": True,
+      "reduce_bucket_size": 90000000,
+      "sub_group_size": 1e9,
+      "offload_optimizer": {
+        "device": "none",
+        "buffer_count": 4,
+        "pipeline_read": False,
+        "pipeline_write": False,
+        "pin_memory": True
+      }
+    },
+    "gradient_clipping": 1.0,
+    "fp16": {
+      "enabled": True,
+      "initial_scale_power" : 15,
+      "loss_scale_window": 1000,
+      "hysteresis": 2,
+      "min_loss_scale": 1
+    },
+    "wall_clock_breakdown": True,
+    "zero_allow_untested_optimizer": True,
+    "aio": {
+      "block_size": 1048576,
+      "queue_depth": 16,
+      "single_submit": False,
+      "overlap_events": True,
+      "thread_count": 2
+    }
+  }
