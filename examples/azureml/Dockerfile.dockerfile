@@ -1,8 +1,10 @@
-FROM mcr.microsoft.com/azureml/aifx/stable-ubuntu2004-cu115-py38-torch1110
+FROM mcr.microsoft.com/azureml/curated/acpt-pytorch-1.11-py38-cuda11.5-gpu
+
 
 USER root:root
 
 RUN pip install pybind11
+RUN pip
 
 RUN pip install git+https://github.com/microsoft/DeepSpeed.git
 
