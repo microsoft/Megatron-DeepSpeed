@@ -81,6 +81,11 @@ def model_provider(pre_process=True, post_process=True):
                 pre_process=pre_process,
                 post_process=post_process
             )
+
+    if args.ort:
+        from onnxruntime.training.ortmodule import ORTModule
+        model = ORTModule(model)
+
     see_memory_usage(f"After Building Model", force=True)
     return model
 

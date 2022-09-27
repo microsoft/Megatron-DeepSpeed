@@ -1,14 +1,12 @@
-FROM mcr.microsoft.com/azureml/aifx/stable-ubuntu2004-cu115-py38-torch1110
+FROM ptebic.azurecr.io/public/azureml/aifx/stable-ubuntu2004-cu113-py38-torch1110:latest
 
 USER root:root
 
-RUN pip install pybind11
+RUN pip install pybind11 regex
 
 RUN pip install git+https://github.com/microsoft/DeepSpeed.git
 
-# add a100-topo.xml
-RUN mkdir -p /opt/microsoft/
-RUN wget -O /opt/microsoft/a100-topo.xml https://hpcbenchmarks.blob.core.windows.net/bookcorpus/data/a100-topo.xml
-
-# to use on A100, enable env var below in your job
-ENV NCCL_TOPO_FILE="/opt/microsoft/a100-topo.xml"
+#RUN git clone https://github.com/prathikr/DeepSpeed.git&&\
+#	cd DeepSpeed &&\
+#	git checkout prathikrao/detach-gradient &&\
+#	pip install -e .

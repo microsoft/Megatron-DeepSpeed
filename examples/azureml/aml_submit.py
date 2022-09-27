@@ -19,7 +19,7 @@ print(ws.name, ws.resource_group, ws.location, ws.subscription_id, sep='\n')
 #-------------------------------------------------------------------------------
 # Prepare Compute Cluster
 #-------------------------------------------------------------------------------
-cluster_name = "a100-80gb"
+cluster_name = "v100"
 
 # Verify that the cluster doesn't exist already
 try:
@@ -65,7 +65,7 @@ merge_file = merge_file_dataset.as_download()
 # Setup training environment
 #-------------------------------------------------------------------------------
 megatron_ds_env = Environment.from_dockerfile(name='megatron-ds-ptca', dockerfile='Dockerfile.dockerfile')
-megatron_ds_env.register(ws).build(ws).wait_for_completion()  # Comment this out if environment already exists
+#megatron_ds_env.register(ws).build(ws).wait_for_completion()  # Comment this out if environment already exists
 
 megatron_ds_env.environment_variables['NCCL_DEBUG'] = 'WARN'
 megatron_ds_env.environment_variables['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
@@ -83,30 +83,36 @@ micro_batch_size = 1
 global_batch_size = micro_batch_size * total_processes_count
 tensorboard_dir = '/tmp/outputs/tensorboard'
 
-run_args = ['--tensor-model-parallel-size', 1, 
-            '--pipeline-model-parallel-size', 1, 
-            '--num-layers', 20,
-            '--hidden-size', 12288,
-            '--num-attention-heads', 96,
-            '--seq-length', 1024,
-            '--loss-scale', 15, 
-            '--max-position-embeddings', 1024, 
+# Model: Benchmark model
+num_layers = 1
+hidden_size = 12288
+num_attention_heads = 96
+seq_length = 1024
+
+run_args = ['--tensor-model-parallel-size', 1,
+            '--pipeline-model-parallel-size', 1,
+            '--num-layers', num_layers,
+            '--hidden-size', hidden_size,
+            '--num-attention-heads', num_attention_heads,
+            '--seq-length', seq_length,
+            '--loss-scale', 15,
+            '--max-position-embeddings', 1024,
             '--micro-batch-size', micro_batch_size,
             '--global-batch-size', global_batch_size,
             '--train-iters', 100,
             '--lr', 6.0e-5,
-            '--min-lr', 6.0e-6, 
+            '--min-lr', 6.0e-6,
             '--lr-decay-style', 'cosine',
-            '--log-interval', 1, 
-            '--eval-iters', 40, 
+            '--log-interval', 1,
+            '--eval-iters', 40,
             '--eval-interval', 1000,
             '--aml-data-download-path', aml_data_download_path,
             '--data-path', data_path,
             '--vocab-file', vocab_file,
             '--merge-file', merge_file,
-            '--save-interval', 1000, 
+            '--save-interval', 1000,
             '--split', '98,2,0',
-            '--clip-grad', 1.0, 
+            '--clip-grad', 1.0,
             '--weight-decay', 0.1,
             '--adam-beta1', 0.9,
             '--adam-beta2', 0.95,
@@ -122,6 +128,7 @@ run_args = ['--tensor-model-parallel-size', 1,
             '--zero-stage', 3,
             '--deepspeed-activation-checkpointing',
             '--exit-interval', 5000,
+            '--ort'
 ]
 
 #-------------------------------------------------------------------------------
@@ -160,7 +167,7 @@ ds_config = {
       "min_loss_scale": 1
     },
     "wall_clock_breakdown": True,
-    "zero_allow_untested_optimizer": False,
+    "zero_allow_untested_optimizer": True,
     "aio": {
       "block_size": 1048576,
       "queue_depth": 16,
