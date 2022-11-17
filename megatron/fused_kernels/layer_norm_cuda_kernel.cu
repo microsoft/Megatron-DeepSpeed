@@ -686,7 +686,11 @@ void HostApplyLayerNorm(
     )
 {
     auto stream = at::cuda::getCurrentCUDAStream().stream();
-    const dim3 threads(32,4,1);
+    const int warp_size = at::cuda::warp_size();
+    dim3 threads(warp_size,4,1);
+#ifndef __HIP_PLATFORM_HCC__
+    threads.y = 1;
+#endif
     const uint64_t maxGridY =
       at::cuda::getCurrentDeviceProperties()->maxGridSize[1];
     const dim3 blocks(1, std::min((uint64_t)n1, maxGridY), 1);
@@ -754,11 +758,16 @@ void HostLayerNormGradient(
     )
 {
     auto stream = at::cuda::getCurrentCUDAStream().stream();
+    const int warp_size = at::cuda::warp_size();
 
     if (gamma != NULL && beta != NULL) {
       // compute grad_gamma(j) and grad_beta(j)
+#ifndef __HIP_PLATFORM_HCC__
+      const int part_size = warp_size;
+#else
       const int part_size = 16;
-      const dim3 threads2(32,4,1);
+#endif
+      const dim3 threads2(warp_size,4,1);
       const dim3 blocks2((n2+threads2.x-1)/threads2.x,part_size,1);
       const int nshared2_a = 2 * sizeof(U) * threads2.y * threads2.y *
 	(threads2.x + 1);
@@ -777,7 +786,7 @@ void HostLayerNormGradient(
 		      part_grad_gamma.DATA_PTR<U>(),
 		      part_grad_beta.DATA_PTR<U>());
 
-      const dim3 threads3(32,8,1);
+      const dim3 threads3(warp_size,8,1);
       const dim3 blocks3((n2+threads2.x-1)/threads2.x,1,1);
       const int nshared3 = threads3.x * threads3.y * sizeof(U);
       cuComputeGradGammaBeta<<<blocks3, threads3, nshared3, stream>>>(
@@ -793,7 +802,10 @@ void HostLayerNormGradient(
     const uint64_t maxGridY =
       at::cuda::getCurrentDeviceProperties()->maxGridSize[1];
     const dim3 blocks1(1, std::min((uint64_t)n1, maxGridY), 1);
-    const dim3 threads1(32,4,1);
+    dim3 threads1(warp_size,4,1);
+#ifndef __HIP_PLATFORM_HCC__
+    threads1.y = 2;
+#endif
     int nshared =
 	    threads1.y > 1 ?
 	    threads1.y*threads1.x*sizeof(U) :
