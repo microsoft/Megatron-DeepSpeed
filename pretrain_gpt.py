@@ -16,6 +16,7 @@
 """Pretrain GPT"""
 
 import torch
+import math
 from functools import partial
 from megatron import get_args
 from megatron import print_rank_0
@@ -116,6 +117,30 @@ def get_batch(data_iterator):
 
     return tokens, labels, loss_mask, attention_mask, position_ids
 
+def data_post_process(data, data_sampler_state_dict):
+    args = get_args()
+    if args.data_efficiency_curriculum_learning:
+        if 'seqlen_truncate' in data_sampler_state_dict['current_difficulties']:
+            args.data_efficiency_curriculum_learning_seqlen_type = 'seqlen_truncate'
+            current_seqlen = data_sampler_state_dict['current_difficulties']['seqlen_truncate']
+            if current_seqlen < args.seq_length:
+                data['text'] = data['text'][:, :(current_seqlen+1)].contiguous()
+        elif 'seqlen_reshape' in data_sampler_state_dict['current_difficulties']:
+            args.data_efficiency_curriculum_learning_seqlen_type = 'seqlen_reshape'
+            current_seqlen = data_sampler_state_dict['current_difficulties']['seqlen_reshape']
+            if current_seqlen < args.seq_length:
+                orig_num_token = torch.numel(data['text'])
+                reshape_len = (data['text'].size()[1] // (current_seqlen+1)) * (current_seqlen+1)
+                data['text'] = torch.cat((data['text'][:, :reshape_len].contiguous().view(-1, current_seqlen+1),
+                    data['text'][:, -(current_seqlen+1):]), 0).contiguous()
+                num_row = math.ceil(orig_num_token / (current_seqlen+1))
+                num_row = min(num_row, data['text'].size()[0])
+                if num_row > 1 and num_row % 2 != 0:
+                    num_row -= 1
+                data['text'] = data['text'][:num_row, :].contiguous()
+        else:
+            args.data_efficiency_curriculum_learning_seqlen_type = None
+    return data
 
 def get_batch_pipe(data):
     """Modification of `get_batch` to work on `next(data_iterator)` instead of `data_iterator`"""
@@ -213,6 +238,11 @@ def forward_step(data_iterator, model):
         data_iterator)
     timers('batch-generator').stop()
 
+    if args.data_efficiency_curriculum_learning:
+        args.curriculum_seqlen = tokens.size()[1]
+        if args.data_efficiency_curriculum_learning_seqlen_type == 'seqlen_reshape':
+            args.data_efficiency_curriculum_learning_numel = torch.numel(tokens)
+
     if args.mos or args.kd:
         # The forward func can return either the loss or the logits, depending on whether passing in the labels or not.
         stu_output, *other_losses = model(tokens, position_ids, attention_mask)
@@ -292,4 +322,5 @@ def git_ds_info():
 if __name__ == "__main__":
     git_ds_info()
     pretrain(train_valid_test_datasets_provider, model_provider, forward_step,
-             args_defaults={'tokenizer_type': 'GPT2BPETokenizer'})
+             args_defaults={'tokenizer_type': 'GPT2BPETokenizer'},
+             data_post_process=data_post_process)

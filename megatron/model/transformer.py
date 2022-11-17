@@ -17,6 +17,7 @@
 import math
 import torch
 import torch.nn.functional as F
+import time
 
 from megatron import get_args
 from megatron import mpu
@@ -464,7 +465,7 @@ class ParallelTransformerLayer(MegatronModule):
                             drop_tokens=args.moe_token_dropping, use_tutel=args.use_tutel,
                             enable_expert_tensor_parallelism=enable_expert_tensor_parallelism) 
 
-    def forward(self, hidden_states, attention_mask,
+    def forward(self, hidden_states, attention_mask=None,
                 encoder_output=None, enc_dec_attn_mask=None,
                 layer_past=None, get_key_value=False):
         # hidden_states: [b, s, h]
@@ -699,6 +700,7 @@ class ParallelTransformer(MegatronModule):
         """Forward method with activation checkpointing."""
         def custom(start, end):
             def custom_forward(*inputs):
+                # import pdb; pdb.set_trace()
                 x_ = inputs[0]
                 attention_mask = inputs[1]
                 encoder_output = inputs[2]
@@ -733,6 +735,9 @@ class ParallelTransformer(MegatronModule):
         used by internal code to bypass the input provided by the
         forward_step_func"""
         self.input_tensor = input_tensor
+
+    def set_token_dropping_length(self, reserved_length):
+        self.reserved_length = int(reserved_length)
 
     def forward(self, hidden_states, attention_mask, layer_past=None,
                 get_key_value=False, encoder_output=None, enc_dec_attn_mask=None):
@@ -771,6 +776,7 @@ class ParallelTransformer(MegatronModule):
                                                        encoder_output,
                                                        enc_dec_attn_mask)
         else:
+            # gpt_sample_tokens, GatherTokens, ScatterTokens
             if get_key_value:
                 presents = []
             for index in range(self.num_layers):
@@ -779,7 +785,7 @@ class ParallelTransformer(MegatronModule):
                 if layer_past is not None:
                     past = layer_past[index]
                 hidden_states = layer(hidden_states,
-                                      attention_mask,
+                                      attention_mask=attention_mask,
                                       encoder_output=encoder_output,
                                       enc_dec_attn_mask=enc_dec_attn_mask,
                                       layer_past=past,
