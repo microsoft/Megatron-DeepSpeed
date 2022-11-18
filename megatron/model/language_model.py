@@ -427,7 +427,7 @@ class TransformerLanguageModel(MegatronModule):
     def state_dict_for_save_checkpoint(self, destination=None, prefix='',
                                        keep_vars=False):
         """For easy load."""
-
+        args = get_args()
         state_dict_ = {}
         moe_state_dict = {}
         if self.pre_process:
@@ -436,6 +436,9 @@ class TransformerLanguageModel(MegatronModule):
                     destination, prefix, keep_vars)
         encoder_state_dict = self.encoder.state_dict_for_save_checkpoint(
                 destination, prefix, keep_vars)
+        if args.random_ltd:
+            from deepspeed.runtime.data_pipeline.data_routing.helper import remove_random_ltd_state_dict
+            encoder_state_dict = remove_random_ltd_state_dict(encoder_state_dict)
         # MoE states need to be handled separately by DeepSpeed engine, thus
         # moving them to the top level dictionary
         # If components other than encoder may contain MoE states, need to add

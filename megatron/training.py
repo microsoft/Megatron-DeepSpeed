@@ -479,10 +479,6 @@ def setup_model_and_optimizer(model_provider_func, teacher=False,
     if args.deepspeed:
         print_rank_0("DeepSpeed is enabled.")
         pp = mpu.get_pipeline_model_parallel_world_size()
-        if args.random_ltd:
-            model = convert_to_random_ltd(model[0], ParallelTransformerLayer)
-        else:
-            model = model[0]
         if args.data_efficiency_curriculum_learning and build_train_valid_test_datasets_provider is not None:
             train_ds = None
             if mpu.get_tensor_model_parallel_rank() == 0:
@@ -501,7 +497,7 @@ def setup_model_and_optimizer(model_provider_func, teacher=False,
                 train_ds, _, _ = build_train_valid_test_datasets_provider(
                     train_val_test_num_samples)
             model, optimizer, args.deepspeed_dataloader, lr_scheduler = deepspeed.initialize(
-                model=model,
+                model=model[0],
                 optimizer=optimizer,
                 args=args,
                 lr_scheduler=lr_scheduler,
@@ -511,7 +507,7 @@ def setup_model_and_optimizer(model_provider_func, teacher=False,
             model.set_data_post_process_func(data_post_process)
         else:
             model, optimizer, _, lr_scheduler = deepspeed.initialize(
-                model=model,
+                model=model[0],
                 optimizer=optimizer,
                 args=args,
                 lr_scheduler=lr_scheduler,
@@ -555,6 +551,10 @@ def setup_model_and_optimizer(model_provider_func, teacher=False,
         unwrapped_model[0].init_state_dict_from_bert()
         if args.fp16:
             optimizer.reload_model_params()
+
+    # random-LTD requires converting transformer layers
+    if args.random_ltd:
+        model[0] = convert_to_random_ltd(model[0], ParallelTransformerLayer)
 
     return model, optimizer, lr_scheduler
 
@@ -793,12 +793,13 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
                               args.consumed_train_samples)
             writer.add_scalar('params-norm/params-norm vs tokens', params_norm,
                               args.consumed_train_tokens)
-        writer.add_scalar('seqlen/actual_seq_length', args.actual_seq_length,
-                          iteration)
-        writer.add_scalar('seqlen/actual_seq_length vs samples', args.actual_seq_length,
-                          args.consumed_train_samples)
-        writer.add_scalar('seqlen/actual_seq_length vs tokens', args.actual_seq_length,
-                          args.consumed_train_tokens)
+        if hasattr(args, 'actual_seq_length'):
+            writer.add_scalar('seqlen/actual_seq_length', args.actual_seq_length,
+                              iteration)
+            writer.add_scalar('seqlen/actual_seq_length vs samples', args.actual_seq_length,
+                              args.consumed_train_samples)
+            writer.add_scalar('seqlen/actual_seq_length vs tokens', args.actual_seq_length,
+                              args.consumed_train_tokens)
         if args.curriculum_learning or args.data_efficiency_curriculum_learning:
             writer.add_scalar('seqlen/curriculum_seqlen', args.curriculum_seqlen,
                               iteration)
@@ -891,7 +892,9 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
     if iteration % args.log_interval == 0:
         elapsed_time = timers('interval-time').elapsed()
         elapsed_time_per_iteration = elapsed_time / total_iterations
-        seq_len = args.actual_seq_length
+        seq_len = args.seq_length
+        if hasattr(args, 'actual_seq_length'):
+            seq_len = args.actual_seq_length
         hidden_size = args.hidden_size
         num_layers = args.num_layers
         vocab_size = args.padded_vocab_size
@@ -941,7 +944,7 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
             log_string += ' curriculum seqlen: {:5d} |'.format(args.curriculum_seqlen)
         if args.random_ltd:
             log_string += ' random ltd reserved length: {:5d} |'.format(args.random_ltd_reserved_length)
-        log_string += ' actual seqlen: {:5d} |'.format(args.actual_seq_length)
+        log_string += ' actual seqlen: {:5d} |'.format(seq_len)
         log_string += ' number of skipped iterations: {:3d} |'.format(
             total_loss_dict[skipped_iters_key])
         log_string += ' number of nan iterations: {:3d} |'.format(
