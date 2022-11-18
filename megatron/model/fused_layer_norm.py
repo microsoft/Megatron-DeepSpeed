@@ -87,6 +87,8 @@ class MixedFusedLayerNorm(torch.nn.Module):
   def forward(self, input):
     # CPU path is here for unittest sake.
     if not input.is_cuda:
+        print("WARNING! The input of FusedLayerNorm should be on the GPU."
+              "This warning should only be triggered in the FusedLayerNorm unit tests.")
         return F.layer_norm(input, self.normalized_shape, self.weight, self.bias, self.eps)
     return FusedLayerNormAffineFunction.apply(
       input, self.weight, self.bias, self.normalized_shape,self.eps)
