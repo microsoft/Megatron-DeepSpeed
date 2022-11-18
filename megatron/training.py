@@ -1003,7 +1003,7 @@ def train(forward_step_func, model, optimizer, lr_scheduler,
     print_datetime('before the start of training step')
     report_memory_flag = True
     if args.random_ltd:
-        assert model[0].randomltd_enabled()
+        assert model[0].random_ltd_enabled()
         args.random_ltd_layer_num = model[0].random_ltd_scheduler.get_random_ltd_layer_num()
         
     while iteration < args.train_iters and (args.train_tokens is None or \
@@ -1035,7 +1035,7 @@ def train(forward_step_func, model, optimizer, lr_scheduler,
         if args.curriculum_learning or args.data_efficiency_curriculum_learning:
             args.actual_seq_length = args.curriculum_seqlen
         if args.random_ltd:
-            args.random_ltd_reserved_length = model[0].randomltd_scheduler.get_current_seq()
+            args.random_ltd_reserved_length = model[0].random_ltd_scheduler.get_current_seq()
             if args.random_ltd_reserved_length < args.actual_seq_length:
                 args.actual_seq_length = (args.actual_seq_length * (args.num_layers - args.random_ltd_layer_num) + args.random_ltd_reserved_length * args.random_ltd_layer_num) / args.num_layers
         if args.curriculum_learning or args.data_efficiency_curriculum_learning:
