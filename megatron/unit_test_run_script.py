@@ -88,8 +88,8 @@ class TestFusedLayerNorm(unittest.TestCase):
     
     def test_layer_norm_mixed_1(self, batch_size=16, contiguous=True, elementwise_affine=True, mixed_fused=True, dtype=torch.float):
         self._test_fused_layer_norm(batch_size, contiguous, elementwise_affine, mixed_fused, dtype)
-    #def test_layer_norm_mixed_2(self, batch_size=65536, contiguous=False, elementwise_affine=True, mixed_fused=True, dtype=torch.float):
-    #    self._test_fused_layer_norm(batch_size, contiguous, elementwise_affine, mixed_fused, dtype)
+    def test_layer_norm_mixed_2(self, batch_size=65536, contiguous=False, elementwise_affine=True, mixed_fused=True, dtype=torch.float):
+        self._test_fused_layer_norm(batch_size, contiguous, elementwise_affine, mixed_fused, dtype)
 
 
 #instantiate_device_type_tests(TestFusedLayerNorm, globals(), only_for=("cuda",))
