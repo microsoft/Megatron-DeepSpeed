@@ -1037,7 +1037,7 @@ def train(forward_step_func, model, optimizer, lr_scheduler,
         if args.random_ltd:
             args.random_ltd_reserved_length = model[0].random_ltd_scheduler.get_current_seq()
             if args.random_ltd_reserved_length < args.actual_seq_length:
-                args.actual_seq_length = (args.actual_seq_length * (args.num_layers - args.random_ltd_layer_num) + args.random_ltd_reserved_length * args.random_ltd_layer_num) / args.num_layers
+                args.actual_seq_length = (args.actual_seq_length * (args.num_layers - args.random_ltd_layer_num) + args.random_ltd_reserved_length * args.random_ltd_layer_num) // args.num_layers
         if args.curriculum_learning or args.data_efficiency_curriculum_learning:
             if hasattr(args, 'data_efficiency_curriculum_learning_numel'):
                 act_mbsz = args.data_efficiency_curriculum_learning_numel / args.curriculum_seqlen
