@@ -17,7 +17,6 @@
 import math
 import torch
 import torch.nn.functional as F
-import time
 
 from megatron import get_args
 from megatron import mpu
@@ -700,7 +699,6 @@ class ParallelTransformer(MegatronModule):
         """Forward method with activation checkpointing."""
         def custom(start, end):
             def custom_forward(*inputs):
-                # import pdb; pdb.set_trace()
                 x_ = inputs[0]
                 attention_mask = inputs[1]
                 encoder_output = inputs[2]
@@ -708,7 +706,7 @@ class ParallelTransformer(MegatronModule):
                 moe_losses = []
                 for index in range(start, end):
                     layer = self._get_layer(index)
-                    x_, moe_loss = layer(x_, attention_mask, encoder_output, enc_dec_attn_mask)
+                    x_, moe_loss = layer(x_, attention_mask=attention_mask, encoder_output=encoder_output, enc_dec_attn_mask=enc_dec_attn_mask)
                     moe_losses.append(moe_loss)
                 return (x_, *moe_losses)
             return custom_forward
@@ -735,9 +733,6 @@ class ParallelTransformer(MegatronModule):
         used by internal code to bypass the input provided by the
         forward_step_func"""
         self.input_tensor = input_tensor
-
-    def set_token_dropping_length(self, reserved_length):
-        self.reserved_length = int(reserved_length)
 
     def forward(self, hidden_states, attention_mask, layer_past=None,
                 get_key_value=False, encoder_output=None, enc_dec_attn_mask=None):
@@ -776,7 +771,6 @@ class ParallelTransformer(MegatronModule):
                                                        encoder_output,
                                                        enc_dec_attn_mask)
         else:
-            # gpt_sample_tokens, GatherTokens, ScatterTokens
             if get_key_value:
                 presents = []
             for index in range(self.num_layers):

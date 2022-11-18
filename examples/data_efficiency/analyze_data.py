@@ -27,9 +27,10 @@ from datetime import datetime
 import numpy as np
 import torch
 
-from deepspeed.runtime.data_pipeline.data_analyzer \
-                import DataAnalyzer
-from deepspeed.runtime.data_pipeline.indexed_dataset import MMapIndexedDataset
+from deepspeed.runtime.data_pipeline.data_sampling.data_analyzer \
+    import DataAnalyzer
+from deepspeed.runtime.data_pipeline.data_sampling.indexed_dataset \
+    import MMapIndexedDataset
 
 from megatron import get_args
 from megatron import print_rank_0
