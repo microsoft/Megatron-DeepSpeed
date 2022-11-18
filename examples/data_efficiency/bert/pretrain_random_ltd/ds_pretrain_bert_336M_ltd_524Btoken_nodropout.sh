@@ -100,8 +100,7 @@ batch_size=16
 ###############################################################################
 ### LTD configs
 ltd_start=128
-ltd_degree=1
-ltd_step_in_million=0.8
+ltd_step_in_million=1.3
 ltd_step=$(calc $ltd_step_in_million*1000000)
 ###############################################################################
 ### Misc configs
@@ -155,7 +154,7 @@ jobname="${jobname}-gbs${global_batch_size}-mbs${batch_size}-gpu${num_gpus}-zero
 if [ "${no_pp}" = "true" ]; then
     jobname="${jobname}-nopp"
 fi
-jobname="${jobname}-ltd-from${ltd_start}-step${ltd_step_in_million}M-root${ltd_degree}-nodrout-kernel"
+jobname="${jobname}-ltd-from${ltd_start}-step${ltd_step_in_million}M"
 
 username=$(whoami)
 output_home="/blob/users/${username}/project/data_efficient_bert"
@@ -163,7 +162,7 @@ log_path="${output_home}/log/"
 checkpoint_path="${output_home}/checkpoint/${jobname}"
 ## Microsoft internal constraint: because tensorboard is logged by last rank,
 ## it's better to put the path in NFS instead of Blob.
-tensorboard_dir="/vc_data/users/${username}/project/data_efficient_bert/tensorboard/"
+tensorboard_dir="/data/users/${username}/project/data_efficient_bert/tensorboard/"
 tensorboard_path="${tensorboard_dir}${jobname}_${host}_${current_time}"
 mkdir -p ${log_path}
 mkdir -p ${checkpoint_path}
@@ -231,6 +230,8 @@ sed "s/CONFIG_BATCH_SIZE/${global_batch_size}/" ${template_json} \
     | sed "s/LOG_INTERVAL/${log_interval}/" \
     | sed "s/ZERO_STAGE/${zero_stage}/" \
     | sed "s/PRESCALE_GRAD/false/" \
+    | sed "s/CONFIG_LTD_MIN/${ltd_start}/" \
+    | sed "s/CONFIG_LTD_MAX/${seq_len}/" \
     | sed "s/CONFIG_LTD_STEP/${ltd_step}/" \
       > ${config_json}
 else
@@ -239,6 +240,8 @@ sed "s/CONFIG_BATCH_SIZE/${global_batch_size}/" ${template_json} \
     | sed "s/LOG_INTERVAL/${log_interval}/" \
     | sed "s/ZERO_STAGE/${zero_stage}/" \
     | sed "s/PRESCALE_GRAD/true/" \
+    | sed "s/CONFIG_LTD_MIN/${ltd_start}/" \
+    | sed "s/CONFIG_LTD_MAX/${seq_len}/" \
     | sed "s/CONFIG_LTD_STEP/${ltd_step}/" \
       > ${config_json}
 fi

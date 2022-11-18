@@ -112,14 +112,13 @@ cl_metric="vocabrarity"
 cl_cluster_type="schedule_based"
 cl_start=5
 cl_end=100
-cl_step_in_million=0.48
-cl_root_degree=2
+cl_step_in_million=0.64
+cl_root_degree=1.5
 cl_step=$(calc $cl_step_in_million*1000000)
 ###############################################################################
 ### LTD configs
 ltd_start=128
-ltd_degree=1
-ltd_step_in_million=0.8
+ltd_step_in_million=1.3
 ltd_step=$(calc $ltd_step_in_million*1000000)
 ###############################################################################
 ### Misc configs
@@ -179,7 +178,7 @@ if [ "${no_pp}" = "true" ]; then
     jobname="${jobname}-nopp"
 fi
 jobname="${jobname}-cl${cl_metric}-from${cl_start}-to${cl_end}-step${cl_step_in_million}M-root${cl_root_degree}"
-jobname="${jobname}-ltd-from${ltd_start}-step${ltd_step_in_million}M-root${ltd_degree}-nodrout-kernel"
+jobname="${jobname}-ltd-from${ltd_start}-step${ltd_step_in_million}M"
 
 username=$(whoami)
 output_home="/blob/users/${username}/project/data_efficient_bert"
@@ -188,7 +187,7 @@ checkpoint_path="${output_home}/checkpoint/${jobname}"
 data_cluster_path="${output_home}/data_cluster/${jobname}"
 ## Microsoft internal constraint: because tensorboard is logged by last rank,
 ## it's better to put the path in NFS instead of Blob.
-tensorboard_dir="/vc_data/users/${username}/project/data_efficient_bert/tensorboard/"
+tensorboard_dir="/data/users/${username}/project/data_efficient_bert/tensorboard/"
 tensorboard_path="${tensorboard_dir}${jobname}_${host}_${current_time}"
 mkdir -p ${log_path}
 mkdir -p ${checkpoint_path}
@@ -253,7 +252,7 @@ megatron_options="${megatron_options} \
 fi
 
 template_json="ds_config_bert_data_efficiency_TEMPLATE.json"
-config_json="ds_config_bert_bsz${global_batch_size}_mbsz${batch_size}_log${log_interval}_zero${zero_stage}_cl${cl_metric}_from${cl_start}_to${cl_end}_step${cl_step_in_million}M_root${cl_root_degree}.json"
+config_json="ds_config_bert_bsz${global_batch_size}_mbsz${batch_size}_log${log_interval}_zero${zero_stage}_cl${cl_metric}_from${cl_start}_to${cl_end}_step${cl_step_in_million}M_root${cl_root_degree}_ltd_from${ltd_start}_step${ltd_step_in_million}M.json"
 if [[ $zero_stage -gt 0 ]]; then
 sed "s/CONFIG_BATCH_SIZE/${global_batch_size}/" ${template_json} \
     | sed "s/CONFIG_MBSIZE/${batch_size}/" \
@@ -271,6 +270,8 @@ sed "s/CONFIG_BATCH_SIZE/${global_batch_size}/" ${template_json} \
     | sed "s/CONFIG_CL_MAX/${cl_end}/" \
     | sed "s/CONFIG_CL_DURATION/${cl_step}/" \
     | sed "s/CONFIG_CL_ROOT_DEGREE/${cl_root_degree}/" \
+    | sed "s/CONFIG_LTD_MIN/${ltd_start}/" \
+    | sed "s/CONFIG_LTD_MAX/${seq_len}/" \
     | sed "s/CONFIG_LTD_STEP/${ltd_step}/" \
       > ${config_json}
 else
@@ -290,6 +291,8 @@ sed "s/CONFIG_BATCH_SIZE/${global_batch_size}/" ${template_json} \
     | sed "s/CONFIG_CL_MAX/${cl_end}/" \
     | sed "s/CONFIG_CL_DURATION/${cl_step}/" \
     | sed "s/CONFIG_CL_ROOT_DEGREE/${cl_root_degree}/" \
+    | sed "s/CONFIG_LTD_MIN/${ltd_start}/" \
+    | sed "s/CONFIG_LTD_MAX/${seq_len}/" \
     | sed "s/CONFIG_LTD_STEP/${ltd_step}/" \
       > ${config_json}
 fi

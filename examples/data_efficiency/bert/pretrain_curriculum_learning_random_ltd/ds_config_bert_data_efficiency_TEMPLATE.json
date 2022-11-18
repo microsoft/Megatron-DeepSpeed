@@ -48,10 +48,10 @@
           }
         }
       }
-    }
-  },
-  "dynamic_train":{
-    "random_ltd":{
+    },
+    "data_routing": {
+      "enabled": true,
+      "random_ltd":{
         "enabled": true,
         "total_layer_num": 24,
         "randomltd_layer_num": 22,
@@ -59,20 +59,16 @@
         "model_mask_name": "attention_mask",
         "model_type": "encoder",
         "hidden_state_order": "seq_batch_dim",
-        "micro_batch_size": CONFIG_MBSIZE,
         "randomltd_schedule": {
-            "min_value": 128,
-            "max_value": 512,
-            "schedule_type":"fixed_linear",
-            "schedule_config": {
-                "require_steps": CONFIG_LTD_STEP,
-                "seq_per_step": 16,
-                "saving_layer_tokens": -1
-              }
-          },
-        "layer_token_lr_schedule": {
-          "enabled": false
+          "min_value": CONFIG_LTD_MIN,
+          "max_value": CONFIG_LTD_MAX,
+          "schedule_type":"fixed_linear",
+          "schedule_config": {
+            "require_steps": CONFIG_LTD_STEP,
+            "seq_per_step": 16
+          }
         }
-    } 
+      } 
+    }
   }
 }
