@@ -76,7 +76,8 @@ void cuWelfordMuSigma2(
   const int i1,
   U& mu,
   U& sigma2,
-  U* buf) 
+  U* buf,
+  const int GPU_WARP_SIZE)
 {
   // Assumptions:
   // 1) blockDim.x == warpSize
@@ -106,12 +107,11 @@ void cuWelfordMuSigma2(
       cuWelfordOnlineSum<U>(curr,mu,sigma2,count);
     }
     // intra-warp reductions
-    for (int l = 0;  l <= 4;  ++l) {
-      int srcLaneB = (threadIdx.x+(1<<l))&31;
-      U muB = WARP_SHFL(mu, srcLaneB);
-      U countB = WARP_SHFL(count, srcLaneB);
-      U sigma2B = WARP_SHFL(sigma2, srcLaneB);
-      cuChanOnlineSum<U>(muB,sigma2B,countB,mu,sigma2,count);
+    for (int stride = GPU_WARP_SIZE / 2; stride > 0; stride /= 2) {
+      U sigma2B = WARP_SHFL_DOWN(sigma2, stride);
+      U muB = WARP_SHFL_DOWN(mu, stride);
+      U countB = WARP_SHFL_DOWN(count, stride);
+      cuChanOnlineSum<U>(muB, sigma2B, countB, mu, sigma2, count);
     }
     // threadIdx.x == 0 has correct values for each warp
     // inter-warp reductions
@@ -160,7 +160,8 @@ void cuWelfordMuSigma2(
   const int i1,
   float& mu,
   float& sigma2,
-  float* buf) 
+  float* buf,
+  const int GPU_WARP_SIZE)
 {
   // Assumptions:
   // 1) blockDim.x == warpSize
@@ -201,12 +202,11 @@ void cuWelfordMuSigma2(
       cuWelfordOnlineSum(curr,mu,sigma2,count);
     }
     // intra-warp reductions
-    for (int l = 0;  l <= 4;  ++l) {
-      int srcLaneB = (threadIdx.x+(1<<l))&31;
-      float muB = WARP_SHFL(mu, srcLaneB);
-      float countB = WARP_SHFL(count, srcLaneB);
-      float sigma2B = WARP_SHFL(sigma2, srcLaneB);
-      cuChanOnlineSum(muB,sigma2B,countB,mu,sigma2,count);
+    for (int stride = GPU_WARP_SIZE / 2; stride > 0; stride /= 2) {
+      float sigma2B = WARP_SHFL_DOWN(sigma2, stride);
+      float muB = WARP_SHFL_DOWN(mu, stride);
+      float countB = WARP_SHFL_DOWN(count, stride);
+      cuChanOnlineSum(muB, sigma2B, countB, mu, sigma2, count);
     }
     // threadIdx.x == 0 has correct values for each warp
     // inter-warp reductions
@@ -308,7 +308,8 @@ void cuApplyLayerNorm(
   const int n2,
   const U epsilon,
   const V* __restrict__ gamma,
-  const V* __restrict__ beta
+  const V* __restrict__ beta,
+  const int GPU_WARP_SIZE
   ) 
 {
   // Assumptions:
@@ -323,7 +324,7 @@ void cuApplyLayerNorm(
     SharedMemory<U> shared;
     U* buf = shared.getPointer();
     U mu,sigma2;
-    cuWelfordMuSigma2(vals,n1,n2,i1,mu,sigma2,buf);
+    cuWelfordMuSigma2(vals,n1,n2,i1,mu,sigma2,buf,GPU_WARP_SIZE);
     const T* lvals = vals + i1*n2;
     V* ovals = output_vals + i1*n2;
     U c_invvar = rsqrt(sigma2 + epsilon);
@@ -705,7 +706,9 @@ void HostApplyLayerNorm(
 		    input,
 		    n1,n2,
 		    U(epsilon),
-            gamma,beta);
+                    gamma,
+		    beta,
+		    warp_size);
 }
 
 
