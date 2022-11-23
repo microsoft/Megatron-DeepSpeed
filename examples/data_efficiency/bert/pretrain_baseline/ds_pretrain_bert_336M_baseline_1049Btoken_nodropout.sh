@@ -30,18 +30,18 @@ min_lr=1e-5
 # init_std=0.02
 
 ## BERT 336M (same config as original BERT-Large model)
-# model_size=0.336
-# num_layers=24
-# hidden_size=1024
-# num_attn_heads=16
-# init_std=0.02
+model_size=0.336
+num_layers=24
+hidden_size=1024
+num_attn_heads=16
+init_std=0.02
 
 ## BERT 1.3B
-model_size=1.3
-num_layers=24
-hidden_size=2048
-num_attn_heads=32
-init_std=0.013
+# model_size=1.3
+# num_layers=24
+# hidden_size=2048
+# num_attn_heads=32
+# init_std=0.013
 
 ## BERT 3.9B
 # model_size=3.9
@@ -52,15 +52,16 @@ init_std=0.013
 ###############################################################################
 ### Training duration configs
 ## The main termination condition, original Megatron paper trains for 2M iters.
+calc() { awk "BEGIN{ printf \"%.0f\n\", $* }"; }
 train_iters_in_million=2
-train_iters=$((${train_iters_in_million} * 1000000))
+train_iters=$(calc $train_iters_in_million*1000000)
 ###############################################################################
 ### lr configs
 ## lr warmup and decay duration. Original Megatron paper uses 10000 warmup
 ## iters. Decay iters is the same as train iters.
 lr_warmup_iters=10000
 lr_decay_iters_in_million=${train_iters_in_million}
-lr_decay_iters=$((${lr_decay_iters_in_million} * 1000000))
+lr_decay_iters=${train_iters}
 lr_decay_style="linear"
 ###############################################################################
 ### Parallelism configs
@@ -75,7 +76,7 @@ pp_size=1
 no_pp="true"
 
 ## ZeRO stage
-zero_stage=1
+zero_stage=0
 
 ## Total number of GPUs. ds_ssh is from DeepSpeed library.
 num_gpus=$(($(ds_ssh nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)-2))
@@ -97,12 +98,12 @@ eval_interval=1000
 # num_save controls how frequent to save checkpoint. num_save=20 means that a
 # checkpoint will be saved every 5% of training. For longer training you would
 # want larger num_save to save more frequently, and vice versa.
-num_save=100
+num_save=20
 save_interval=$((${train_iters} / ${num_save}))
 
 ## Activation checkpointing saves GPU memory, but reduces training speed
-activation_checkpoint="true"
-# activation_checkpoint="false"
+# activation_checkpoint="true"
+activation_checkpoint="false"
 
 ## Whether or not log optimizer states (norms, max abs values) to tensorboard.
 ## This is not required for training and might save GPU memory when turned off.
@@ -138,16 +139,16 @@ jobname="${jobname}-${model_size}B-iters-${train_iters_in_million}M"
 jobname="${jobname}-lr-${lr}-min-${min_lr}-wmup-${lr_warmup_iters}-dcy-${lr_decay_iters_in_million}M-sty-${lr_decay_style}"
 jobname="${jobname}-gbs-${global_batch_size}-mbs-${batch_size}-gpu-${num_gpus}-zero-${zero_stage}-mp-${mp_size}-pp-${pp_size}"
 if [ "${no_pp}" = "true" ]; then
-    jobname="${jobname}-nopp"
+    jobname="${jobname}-nopp-nodrop"
 fi
 
 username=$(whoami)
-output_home="/blob/users/${username}/project/bert_with_pile"
+output_home="/blob/users/${username}/project/data_efficient_bert"
 log_path="${output_home}/log/"
 checkpoint_path="${output_home}/checkpoint/${jobname}"
 ## Microsoft internal constraint: because tensorboard is logged by last rank,
 ## it's better to put the path in NFS instead of Blob.
-tensorboard_dir="/vc_data/users/${username}/project/bert_with_pile/tensorboard/"
+tensorboard_dir="/data/users/${username}/project/data_efficient_bert/tensorboard/"
 tensorboard_path="${tensorboard_dir}${jobname}_${host}_${current_time}"
 mkdir -p ${log_path}
 mkdir -p ${checkpoint_path}
@@ -188,6 +189,7 @@ megatron_options=" \
     --fp16 \
     --load ${checkpoint_path} \
     --save ${checkpoint_path} \
+    --attention-dropout 0.0 --hidden-dropout 0.0 \
     --tensorboard-queue-size 1 \
     --log-timers-to-tensorboard \
     --log-batch-size-to-tensorboard \
@@ -257,4 +259,4 @@ if [[ $iteration -gt 0 ]]; then
     ds_ssh "echo $iteration_2 > $iteration_file_2"
 fi
 
-deepspeed ${dir}/../../../../pretrain_bert.py ${megatron_options} ${data_options} ${deepspeed_options} &>> ${log_path}/${jobname}_${host}_${current_time}.log
+NCCL_TREE_THRESHOLD=0 NCCL_IB_GID_INDEX=3 NCCL_IB_TIMEOUT=22 deepspeed ${dir}/../../../../pretrain_bert.py ${megatron_options} ${data_options} ${deepspeed_options} &>> ${log_path}/${jobname}_${host}_${current_time}.log

@@ -97,28 +97,27 @@ dp_size=$(( ${num_gpus} / ${pp_size} / ${mp_size} ))
 ## Make sure that batch_size <= global_batch_size*pp_size*mp_size/num_gpus
 ## Below batch_size calculation assumes the case without gradient accumulation.
 ## Manually set it to a lower value if you hit out of memory during training.
-# batch_size=$(( ${global_batch_size} / ${dp_size} ))
-batch_size=16
+batch_size=$(( ${global_batch_size} / ${dp_size} ))
 ###############################################################################
 ### Curriculum learning configs
 ## The *_index_to_sample_percentile_merged is a concatenated index for perf
 ## improvement, but it only works when you set "difficulty_type": "percentile"
 ## in ds_config. If you use "difficulty_type": "value", you need to change this
 ## to *_index_to_sample
-index_to_sample_path="/blob/users/conglli/data/analysis_pile_bert_5epoch/vocab_rarity/vocab_rarity_index_to_sample_percentile_merged"
-# index_to_sample_path="/blob/users/conglli/data/analysis_pile_bert_5epoch/vocab_rarity/vocab_rarity_index_to_sample"
+# index_to_sample_path="/blob/users/conglli/data/analysis_pile_bert_5epoch/vocab_rarity/vocab_rarity_index_to_sample_percentile_merged"
+index_to_sample_path="/blob/users/conglli/data/analysis_pile_bert_5epoch/vocab_rarity/vocab_rarity_index_to_sample"
 index_to_metric_path="/blob/users/conglli/data/analysis_pile_bert_5epoch/vocab_rarity/vocab_rarity_index_to_metric"
 cl_metric="vocabrarity"
 cl_cluster_type="schedule_based"
-cl_start=5
-cl_end=100
+cl_start=600
+cl_end=9069
 cl_step_in_million=0.64
-cl_root_degree=1.5
+cl_root_degree=2
 cl_step=$(calc $cl_step_in_million*1000000)
 ###############################################################################
 ### LTD configs
-ltd_start=128
-ltd_step_in_million=1.3
+ltd_start=200
+ltd_step_in_million=1.2
 ltd_step=$(calc $ltd_step_in_million*1000000)
 ###############################################################################
 ### Misc configs
@@ -128,7 +127,7 @@ eval_interval=1000
 # num_save controls how frequent to save checkpoint. num_save=20 means that a
 # checkpoint will be saved every 5% of training. For longer training you would
 # want larger num_save to save more frequently, and vice versa.
-num_save=1
+num_save=25
 estimated_train_iter=$((${train_tokens} / ${seq_len} / ${global_batch_size}))
 save_interval=$((${estimated_train_iter} / ${num_save}))
 
@@ -175,7 +174,7 @@ jobname="${jobname}-${model_size}B-tok${train_tokens_in_billion}B"
 jobname="${jobname}-lr${lr}-min${min_lr}-wmup${lr_warmup_iters}-dcy${lr_decay_tokens_in_billion}B-sty-${lr_decay_style}"
 jobname="${jobname}-gbs${global_batch_size}-mbs${batch_size}-gpu${num_gpus}-zero${zero_stage}-mp${mp_size}-pp${pp_size}"
 if [ "${no_pp}" = "true" ]; then
-    jobname="${jobname}-nopp"
+    jobname="${jobname}-nopp-nodrop"
 fi
 jobname="${jobname}-cl${cl_metric}-from${cl_start}-to${cl_end}-step${cl_step_in_million}M-root${cl_root_degree}"
 jobname="${jobname}-ltd-from${ltd_start}-step${ltd_step_in_million}M"
@@ -332,4 +331,4 @@ if [[ $iteration -gt 0 ]]; then
     ds_ssh "echo $iteration_2 > $iteration_file_2"
 fi
 
-deepspeed ${dir}/../../../../pretrain_bert.py ${megatron_options} ${data_options} ${deepspeed_options} &>> ${log_path}/${jobname}_${host}_${current_time}.log
+NCCL_TREE_THRESHOLD=0 NCCL_IB_GID_INDEX=3 NCCL_IB_TIMEOUT=22 deepspeed ${dir}/../../../../pretrain_bert.py ${megatron_options} ${data_options} ${deepspeed_options} &>> ${log_path}/${jobname}_${host}_${current_time}.log

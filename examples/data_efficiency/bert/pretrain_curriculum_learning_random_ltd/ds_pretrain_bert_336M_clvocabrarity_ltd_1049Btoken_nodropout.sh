@@ -7,8 +7,7 @@ dir=`pwd`
 ### or build your own configs.
 seq_len=512
 global_batch_size=1024
-# lr=1e-4
-lr=2e-4 # scaled based on train token reduction ratio
+lr=1e-4
 min_lr=1e-5
 
 ## init_std is the standard deviation for weight initialization. Usually larger
@@ -56,7 +55,7 @@ init_std=0.02
 ## We changed to token-based termination since curriculum learning could change
 ## token per step.
 calc() { awk "BEGIN{ printf \"%.0f\n\", $* }"; }
-train_iters_in_million=1
+train_iters_in_million=2
 train_tokens=$(calc $train_iters_in_million*1000000*$seq_len*$global_batch_size)
 train_tokens_in_billion=$(calc $train_tokens/1000000000)
 
@@ -108,13 +107,17 @@ batch_size=$(( ${global_batch_size} / ${dp_size} ))
 index_to_sample_path="/blob/users/conglli/data/analysis_pile_bert_5epoch/vocab_rarity/vocab_rarity_index_to_sample"
 index_to_metric_path="/blob/users/conglli/data/analysis_pile_bert_5epoch/vocab_rarity/vocab_rarity_index_to_metric"
 cl_metric="vocabrarity"
-cl_diff_type="value"
 cl_cluster_type="schedule_based"
 cl_start=600
 cl_end=9069
-cl_step_in_million=0.64
+cl_step_in_million=0.96
 cl_root_degree=2
 cl_step=$(calc $cl_step_in_million*1000000)
+###############################################################################
+### LTD configs
+ltd_start=200
+ltd_step_in_million=1.8
+ltd_step=$(calc $ltd_step_in_million*1000000)
 ###############################################################################
 ### Misc configs
 log_interval=100
@@ -123,7 +126,7 @@ eval_interval=1000
 # num_save controls how frequent to save checkpoint. num_save=20 means that a
 # checkpoint will be saved every 5% of training. For longer training you would
 # want larger num_save to save more frequently, and vice versa.
-num_save=25
+num_save=50
 estimated_train_iter=$((${train_tokens} / ${seq_len} / ${global_batch_size}))
 save_interval=$((${estimated_train_iter} / ${num_save}))
 
@@ -170,9 +173,10 @@ jobname="${jobname}-${model_size}B-tok${train_tokens_in_billion}B"
 jobname="${jobname}-lr${lr}-min${min_lr}-wmup${lr_warmup_iters}-dcy${lr_decay_tokens_in_billion}B-sty-${lr_decay_style}"
 jobname="${jobname}-gbs${global_batch_size}-mbs${batch_size}-gpu${num_gpus}-zero${zero_stage}-mp${mp_size}-pp${pp_size}"
 if [ "${no_pp}" = "true" ]; then
-    jobname="${jobname}-nopp"
+    jobname="${jobname}-nopp-nodrop"
 fi
 jobname="${jobname}-cl${cl_metric}-from${cl_start}-to${cl_end}-step${cl_step_in_million}M-root${cl_root_degree}"
+jobname="${jobname}-ltd-from${ltd_start}-step${ltd_step_in_million}M"
 
 username=$(whoami)
 output_home="/blob/users/${username}/project/data_efficient_bert"
@@ -224,6 +228,8 @@ megatron_options=" \
     --fp16 \
     --load ${checkpoint_path} \
     --save ${checkpoint_path} \
+    --random-ltd \
+    --attention-dropout 0.0 --hidden-dropout 0.0 \
     --seed ${seed} \
     --data-efficiency-curriculum-learning \
     --train-idx-path ${train_idx_path} \
@@ -244,7 +250,7 @@ megatron_options="${megatron_options} \
 fi
 
 template_json="ds_config_bert_data_efficiency_TEMPLATE.json"
-config_json="ds_config_bert_bsz${global_batch_size}_mbsz${batch_size}_log${log_interval}_zero${zero_stage}_cl${cl_metric}_from${cl_start}_to${cl_end}_step${cl_step_in_million}M_root${cl_root_degree}.json"
+config_json="ds_config_bert_bsz${global_batch_size}_mbsz${batch_size}_log${log_interval}_zero${zero_stage}_cl${cl_metric}_from${cl_start}_to${cl_end}_step${cl_step_in_million}M_root${cl_root_degree}_ltd_from${ltd_start}_step${ltd_step_in_million}M.json"
 if [[ $zero_stage -gt 0 ]]; then
 sed "s/CONFIG_BATCH_SIZE/${global_batch_size}/" ${template_json} \
     | sed "s/CONFIG_MBSIZE/${batch_size}/" \
@@ -254,7 +260,6 @@ sed "s/CONFIG_BATCH_SIZE/${global_batch_size}/" ${template_json} \
     | sed "s/DATA_EFFICIENCY_SEED/${seed}/" \
     | sed "s/DATA_SAMPLING_NUM_WORKERS/${num_workers}/" \
     | sed "s#CL_METRIC_NAME#${cl_metric}#" \
-    | sed "s#CL_DIFF_TYPE#${cl_diff_type}#" \
     | sed "s#CL_CLUSTER_TYPE#${cl_cluster_type}#" \
     | sed "s#CONFIG_CL_CLUSTER_PATH#${data_cluster_path}#" \
     | sed "s#CONFIG_CL_SAMPLE_PATH#${index_to_sample_path}#" \
@@ -263,6 +268,9 @@ sed "s/CONFIG_BATCH_SIZE/${global_batch_size}/" ${template_json} \
     | sed "s/CONFIG_CL_MAX/${cl_end}/" \
     | sed "s/CONFIG_CL_DURATION/${cl_step}/" \
     | sed "s/CONFIG_CL_ROOT_DEGREE/${cl_root_degree}/" \
+    | sed "s/CONFIG_LTD_MIN/${ltd_start}/" \
+    | sed "s/CONFIG_LTD_MAX/${seq_len}/" \
+    | sed "s/CONFIG_LTD_STEP/${ltd_step}/" \
       > ${config_json}
 else
 sed "s/CONFIG_BATCH_SIZE/${global_batch_size}/" ${template_json} \
@@ -273,7 +281,6 @@ sed "s/CONFIG_BATCH_SIZE/${global_batch_size}/" ${template_json} \
     | sed "s/DATA_EFFICIENCY_SEED/${seed}/" \
     | sed "s/DATA_SAMPLING_NUM_WORKERS/${num_workers}/" \
     | sed "s#CL_METRIC_NAME#${cl_metric}#" \
-    | sed "s#CL_DIFF_TYPE#${cl_diff_type}#" \
     | sed "s#CL_CLUSTER_TYPE#${cl_cluster_type}#" \
     | sed "s#CONFIG_CL_CLUSTER_PATH#${data_cluster_path}#" \
     | sed "s#CONFIG_CL_SAMPLE_PATH#${index_to_sample_path}#" \
@@ -282,6 +289,9 @@ sed "s/CONFIG_BATCH_SIZE/${global_batch_size}/" ${template_json} \
     | sed "s/CONFIG_CL_MAX/${cl_end}/" \
     | sed "s/CONFIG_CL_DURATION/${cl_step}/" \
     | sed "s/CONFIG_CL_ROOT_DEGREE/${cl_root_degree}/" \
+    | sed "s/CONFIG_LTD_MIN/${ltd_start}/" \
+    | sed "s/CONFIG_LTD_MAX/${seq_len}/" \
+    | sed "s/CONFIG_LTD_STEP/${ltd_step}/" \
       > ${config_json}
 fi
 

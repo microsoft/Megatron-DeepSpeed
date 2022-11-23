@@ -95,12 +95,11 @@ dp_size=$(( ${num_gpus} / ${pp_size} / ${mp_size} ))
 ## Make sure that batch_size <= global_batch_size*pp_size*mp_size/num_gpus
 ## Below batch_size calculation assumes the case without gradient accumulation.
 ## Manually set it to a lower value if you hit out of memory during training.
-# batch_size=$(( ${global_batch_size} / ${dp_size} ))
-batch_size=16
+batch_size=$(( ${global_batch_size} / ${dp_size} ))
 ###############################################################################
 ### LTD configs
-ltd_start=128
-ltd_step_in_million=1.3
+ltd_start=200
+ltd_step_in_million=1.2
 ltd_step=$(calc $ltd_step_in_million*1000000)
 ###############################################################################
 ### Misc configs
@@ -110,7 +109,7 @@ eval_interval=1000
 # num_save controls how frequent to save checkpoint. num_save=20 means that a
 # checkpoint will be saved every 5% of training. For longer training you would
 # want larger num_save to save more frequently, and vice versa.
-num_save=1
+num_save=25
 estimated_train_iter=$((${train_tokens} / ${seq_len} / ${global_batch_size}))
 save_interval=$((${estimated_train_iter} / ${num_save}))
 
@@ -152,7 +151,7 @@ jobname="${jobname}-${model_size}B-tok${train_tokens_in_billion}B"
 jobname="${jobname}-lr${lr}-min${min_lr}-wmup${lr_warmup_iters}-dcy${lr_decay_tokens_in_billion}B-sty-${lr_decay_style}"
 jobname="${jobname}-gbs${global_batch_size}-mbs${batch_size}-gpu${num_gpus}-zero${zero_stage}-mp${mp_size}-pp${pp_size}"
 if [ "${no_pp}" = "true" ]; then
-    jobname="${jobname}-nopp"
+    jobname="${jobname}-nopp-nodrop"
 fi
 jobname="${jobname}-ltd-from${ltd_start}-step${ltd_step_in_million}M"
 
@@ -223,7 +222,7 @@ megatron_options="${megatron_options} \
 fi
 
 template_json="ds_config_bert_TEMPLATE.json"
-config_json="ds_config_bert_bsz${global_batch_size}_mbsz${batch_size}_log${log_interval}_zero${zero_stage}.json"
+config_json="ds_config_bert_bsz${global_batch_size}_mbsz${batch_size}_log${log_interval}_zero${zero_stage}_ltd_from${ltd_start}_step${ltd_step_in_million}M.json"
 if [[ $zero_stage -gt 0 ]]; then
 sed "s/CONFIG_BATCH_SIZE/${global_batch_size}/" ${template_json} \
     | sed "s/CONFIG_MBSIZE/${batch_size}/" \
@@ -281,4 +280,4 @@ if [[ $iteration -gt 0 ]]; then
     ds_ssh "echo $iteration_2 > $iteration_file_2"
 fi
 
-deepspeed ${dir}/../../../../pretrain_bert.py ${megatron_options} ${data_options} ${deepspeed_options} &>> ${log_path}/${jobname}_${host}_${current_time}.log
+NCCL_TREE_THRESHOLD=0 NCCL_IB_GID_INDEX=3 NCCL_IB_TIMEOUT=22 deepspeed ${dir}/../../../../pretrain_bert.py ${megatron_options} ${data_options} ${deepspeed_options} &>> ${log_path}/${jobname}_${host}_${current_time}.log

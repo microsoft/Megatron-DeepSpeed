@@ -148,7 +148,7 @@ log_path="${output_home}/log/"
 checkpoint_path="${output_home}/checkpoint/${jobname}"
 ## Microsoft internal constraint: because tensorboard is logged by last rank,
 ## it's better to put the path in NFS instead of Blob.
-tensorboard_dir="/vc_data/users/${username}/project/data_efficient_bert/tensorboard/"
+tensorboard_dir="/data/users/${username}/project/data_efficient_bert/tensorboard/"
 tensorboard_path="${tensorboard_dir}${jobname}_${host}_${current_time}"
 mkdir -p ${log_path}
 mkdir -p ${checkpoint_path}
@@ -258,4 +258,4 @@ if [[ $iteration -gt 0 ]]; then
     ds_ssh "echo $iteration_2 > $iteration_file_2"
 fi
 
-NCCL_TREE_THRESHOLD=0 NCCL_IB_GID_INDEX=3 deepspeed ${dir}/../../../../pretrain_bert.py ${megatron_options} ${data_options} ${deepspeed_options} &>> ${log_path}/${jobname}_${host}_${current_time}.log
+NCCL_TREE_THRESHOLD=0 NCCL_IB_GID_INDEX=3 NCCL_IB_TIMEOUT=22 deepspeed ${dir}/../../../../pretrain_bert.py ${megatron_options} ${data_options} ${deepspeed_options} &>> ${log_path}/${jobname}_${host}_${current_time}.log

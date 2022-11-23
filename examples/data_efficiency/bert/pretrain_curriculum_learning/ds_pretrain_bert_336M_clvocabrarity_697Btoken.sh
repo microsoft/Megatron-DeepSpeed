@@ -104,14 +104,15 @@ batch_size=$(( ${global_batch_size} / ${dp_size} ))
 ## improvement, but it only works when you set "difficulty_type": "percentile"
 ## in ds_config. If you use "difficulty_type": "value", you need to change this
 ## to *_index_to_sample
-index_to_sample_path="/blob/users/conglli/data/analysis_pile_bert_5epoch/vocab_rarity/vocab_rarity_index_to_sample_percentile_merged"
-# index_to_sample_path="/blob/users/conglli/data/analysis_pile_bert_5epoch/vocab_rarity/vocab_rarity_index_to_sample"
+# index_to_sample_path="/blob/users/conglli/data/analysis_pile_bert_5epoch/vocab_rarity/vocab_rarity_index_to_sample_percentile_merged"
+index_to_sample_path="/blob/users/conglli/data/analysis_pile_bert_5epoch/vocab_rarity/vocab_rarity_index_to_sample"
 index_to_metric_path="/blob/users/conglli/data/analysis_pile_bert_5epoch/vocab_rarity/vocab_rarity_index_to_metric"
 cl_metric="vocabrarity"
+cl_diff_type="value"
 cl_cluster_type="schedule_based"
-cl_start=5
-cl_end=100
-cl_step_in_million=0.64
+cl_start=600
+cl_end=9069
+cl_step_in_million=0.8
 cl_root_degree=2
 cl_step=$(calc $cl_step_in_million*1000000)
 ###############################################################################
@@ -180,7 +181,7 @@ checkpoint_path="${output_home}/checkpoint/${jobname}"
 data_cluster_path="${output_home}/data_cluster/${jobname}"
 ## Microsoft internal constraint: because tensorboard is logged by last rank,
 ## it's better to put the path in NFS instead of Blob.
-tensorboard_dir="/vc_data/users/${username}/project/data_efficient_bert/tensorboard/"
+tensorboard_dir="/data/users/${username}/project/data_efficient_bert/tensorboard/"
 tensorboard_path="${tensorboard_dir}${jobname}_${host}_${current_time}"
 mkdir -p ${log_path}
 mkdir -p ${checkpoint_path}
@@ -253,6 +254,7 @@ sed "s/CONFIG_BATCH_SIZE/${global_batch_size}/" ${template_json} \
     | sed "s/DATA_EFFICIENCY_SEED/${seed}/" \
     | sed "s/DATA_SAMPLING_NUM_WORKERS/${num_workers}/" \
     | sed "s#CL_METRIC_NAME#${cl_metric}#" \
+    | sed "s#CL_DIFF_TYPE#${cl_diff_type}#" \
     | sed "s#CL_CLUSTER_TYPE#${cl_cluster_type}#" \
     | sed "s#CONFIG_CL_CLUSTER_PATH#${data_cluster_path}#" \
     | sed "s#CONFIG_CL_SAMPLE_PATH#${index_to_sample_path}#" \
@@ -271,6 +273,7 @@ sed "s/CONFIG_BATCH_SIZE/${global_batch_size}/" ${template_json} \
     | sed "s/DATA_EFFICIENCY_SEED/${seed}/" \
     | sed "s/DATA_SAMPLING_NUM_WORKERS/${num_workers}/" \
     | sed "s#CL_METRIC_NAME#${cl_metric}#" \
+    | sed "s#CL_DIFF_TYPE#${cl_diff_type}#" \
     | sed "s#CL_CLUSTER_TYPE#${cl_cluster_type}#" \
     | sed "s#CONFIG_CL_CLUSTER_PATH#${data_cluster_path}#" \
     | sed "s#CONFIG_CL_SAMPLE_PATH#${index_to_sample_path}#" \
@@ -317,4 +320,4 @@ if [[ $iteration -gt 0 ]]; then
     ds_ssh "echo $iteration_2 > $iteration_file_2"
 fi
 
-deepspeed ${dir}/../../../../pretrain_bert.py ${megatron_options} ${data_options} ${deepspeed_options} &>> ${log_path}/${jobname}_${host}_${current_time}.log
+NCCL_TREE_THRESHOLD=0 NCCL_IB_GID_INDEX=3 NCCL_IB_TIMEOUT=22 deepspeed ${dir}/../../../../pretrain_bert.py ${megatron_options} ${data_options} ${deepspeed_options} &>> ${log_path}/${jobname}_${host}_${current_time}.log

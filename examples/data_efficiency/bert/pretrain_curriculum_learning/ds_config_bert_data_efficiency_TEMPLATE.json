@@ -35,7 +35,7 @@
           "CL_METRIC_NAME": {
             "index_to_sample_path": "CONFIG_CL_SAMPLE_PATH",
             "index_to_metric_path": "CONFIG_CL_METRIC_PATH",
-            "difficulty_type": "percentile",
+            "difficulty_type": "CL_DIFF_TYPE",
             "clustering_type": "CL_CLUSTER_TYPE",
             "min_difficulty": CONFIG_CL_MIN,
             "max_difficulty": CONFIG_CL_MAX,
