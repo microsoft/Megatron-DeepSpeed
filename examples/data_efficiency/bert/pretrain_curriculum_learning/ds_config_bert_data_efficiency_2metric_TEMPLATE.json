@@ -35,7 +35,7 @@
           "CL_1st_METRIC_NAME": {
             "index_to_sample_path": "CONFIG_CL_1st_SAMPLE_PATH",
             "index_to_metric_path": "CONFIG_CL_1st_METRIC_PATH",
-            "difficulty_type": "percentile",
+            "difficulty_type": "CL_1st_DIFF_TYPE",
             "clustering_type": "CL_1st_CLUSTER_TYPE",
             "min_difficulty": CONFIG_CL_1st_MIN,
             "max_difficulty": CONFIG_CL_1st_MAX,
@@ -49,7 +49,7 @@
           "CL_2nd_METRIC_NAME": {
             "index_to_sample_path": "CONFIG_CL_2nd_SAMPLE_PATH",
             "index_to_metric_path": "CONFIG_CL_2nd_METRIC_PATH",
-            "difficulty_type": "percentile",
+            "difficulty_type": "CL_2nd_DIFF_TYPE",
             "clustering_type": "CL_2nd_CLUSTER_TYPE",
             "min_difficulty": CONFIG_CL_2nd_MIN,
             "max_difficulty": CONFIG_CL_2nd_MAX,
