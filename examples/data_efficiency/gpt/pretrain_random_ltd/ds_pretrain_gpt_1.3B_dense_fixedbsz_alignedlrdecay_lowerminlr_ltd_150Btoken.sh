@@ -13,15 +13,18 @@ seq_len=2048
 ## model needs lower std. We used a heuristic equation of sqrt(1/3/hidden_size)
 ## from the MT-NLG 530B work (https://arxiv.org/pdf/2201.11990.pdf)
 
+### We changed min_lr to a lower number (1.0e-6), which we found is able to
+### provide better zero-shot eval results.
+
 ## GPT-3 Small 125M
-model_size=0.125
-num_layers=12
-hidden_size=768
-num_attn_heads=12
-global_batch_size=256
-lr=6.0e-4
-min_lr=6.0e-5
-init_std=0.02
+# model_size=0.125
+# num_layers=12
+# hidden_size=768
+# num_attn_heads=12
+# global_batch_size=256
+# lr=6.0e-4
+# min_lr=1.0e-6
+# init_std=0.02
 
 ## GPT-3 Medium 350M
 # model_size=0.35
@@ -30,7 +33,7 @@ init_std=0.02
 # num_attn_heads=16
 # global_batch_size=256
 # lr=3.0e-4
-# min_lr=3.0e-5
+# min_lr=1.0e-6
 # init_std=0.018
 
 ## GPT-3 Large 760M
@@ -40,18 +43,19 @@ init_std=0.02
 # num_attn_heads=16
 # global_batch_size=256
 # lr=2.5e-4
-# min_lr=2.5e-5
+# min_lr=1.0e-6
 # init_std=0.015
 
 ## GPT-3 XL 1.3B
-# model_size=1.3
-# num_layers=24
-# hidden_size=2048
-# num_attn_heads=16
-# global_batch_size=512
+model_size=1.3
+num_layers=24
+hidden_size=2048
+num_attn_heads=16
+global_batch_size=512
 # lr=2.0e-4
-# min_lr=2.0e-5
-# init_std=0.013
+lr=3.0e-4
+min_lr=1.0e-6
+init_std=0.013
 
 ## GPT-3 2.7B
 # model_size=2.7
@@ -60,7 +64,7 @@ init_std=0.02
 # num_attn_heads=32
 # global_batch_size=512
 # lr=1.6e-4
-# min_lr=1.6e-5
+# min_lr=1.0e-6
 # init_std=0.011
 
 ## GPT-3 6.7B
@@ -70,7 +74,7 @@ init_std=0.02
 # num_attn_heads=32
 # global_batch_size=1024
 # lr=1.2e-4
-# min_lr=1.2e-5
+# min_lr=1.0e-6
 # init_std=0.009
 
 ## GPT-3 13B
@@ -80,7 +84,7 @@ init_std=0.02
 # num_attn_heads=40
 # global_batch_size=1024
 # lr=1.0e-4
-# min_lr=1.0e-5
+# min_lr=1.0e-6
 # init_std=0.008
 
 ## GPT-3 175B
@@ -90,31 +94,13 @@ init_std=0.02
 # num_attn_heads=96
 # global_batch_size=1536
 # lr=0.6e-4
-# min_lr=0.6e-5
+# min_lr=1.0e-6
 # init_std=0.005
 ###############################################################################
 ### Training duration configs
-## To strictly follow original GPT-3 paper, this script uses the batch size
-## warmup technique which "gradually increase the batch size linearly from a
-## small value (32k tokens) to the full value over the first 4-12 billion
-## tokens of training, depending on the model size". In order to support the
-## small batch sizes, the training need to be done in two stages.
-bsz_warmup_tokens_in_billion=4
-bsz_warmup_samples=$((${bsz_warmup_tokens_in_billion} * 1000000000 / ${seq_len}))
-bsz_warmup_schedule="16 16 ${bsz_warmup_samples}"
-
-## Set this to true if you resume from an unfinished training but the first
-## stage already finished
-resume_from_second_stage="false"
-# resume_from_second_stage="true"
-
 ## The main termination condition, original GPT-3 paper trains for 300B tokens.
-train_tokens_in_billion=300
+train_tokens_in_billion=200
 train_tokens=$((${train_tokens_in_billion} * 1000000000))
-## Below is num token for first batch size warmup stage only. This number is
-## 5M larger than the actual num warmup token to make sure we fully finish
-## the warmup in first stage.
-train_tokens_1st_stage=$((${bsz_warmup_tokens_in_billion} * 1000000000 + 5000000))
 
 ## train_samples is another termination condition and also affect the number of 
 ## data samples to be indexed. Since we want to reach the train_tokens
@@ -130,21 +116,24 @@ exit_duration=30000000
 ### lr configs
 ## lr warmup and decay duration.
 ## Original GPT-3 paper uses 375M warmup tokens and 260B cosine decay tokens.
-lr_warmup_tokens_in_million=375
+## Here we increase the warmup tokens to 3B (1%) since when batch size warmup
+## is not used, there are more tokens per step. Thus we need to increase warmup
+## tokens to make sure there are enough warmup steps, which is important for
+## training stability.
+lr_warmup_tokens_in_million=3000
 lr_warmup_tokens=$((${lr_warmup_tokens_in_million} * 1000000))
-lr_decay_tokens_in_billion=260
+## Here we changed the LR decay tokens to align with total train tokens, since
+## related works (e.g., https://arxiv.org/abs/2203.15556) find that setting the
+## learning rate schedule to match the number of training tokens results in the
+## best final model quality 
+lr_decay_tokens_in_billion=${train_tokens_in_billion}
 lr_decay_tokens=$((${lr_decay_tokens_in_billion} * 1000000000))
 lr_decay_style="cosine"
 ###############################################################################
 ### Parallelism configs
 ## Micro batch size per GPU
 ## Make sure that batch_size <= global_batch_size*pp_size*mp_size/num_gpus
-batch_size=4
-## This is the micro batch size for first batch size warmup stage only. For
-## first stage the total number of gpus has to be no more than 16, and the
-## micro batch size has to be 16/numgpu since the batch starts with 16 and
-## increment by multiple of 16.
-batch_size_1st_stage=1
+batch_size=8
 
 ## Model parallelism, 1 is no MP
 mp_size=1
@@ -154,19 +143,18 @@ pp_size=1
 no_pp="true"
 
 ## ZeRO stage
-zero_stage=0
+zero_stage=1
 
 ## Total number of GPUs. ds_ssh is from DeepSpeed library.
 num_gpus=$(($(ds_ssh nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)-2))
 num_gpus_pernode=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 num_node=$(( ${num_gpus} / ${num_gpus_pernode} ))
-## Because 1st stage starts warmup batch size from 16 with a step of 16, we can
-## only use up to 16 gpus.
-num_node_1st_stage=$(( 16 / ${num_gpus_pernode} ))
-num_node_1st_stage=$(( ${num_node_1st_stage} > 1 ? ${num_node_1st_stage} : 1 ))
-num_gpus_pernode_1st_stage=$(( ${num_gpus_pernode} < 16 ? ${num_gpus_pernode} : 16 ))
 ## Data parallel size. Currently not used as any config, just for record.
 dp_size=$(( ${num_gpus} / ${pp_size} / ${mp_size} ))
+###############################################################################
+### LTD configs
+ltd_start=128
+ltd_step=133333
 ###############################################################################
 ### Misc configs
 log_interval=100
@@ -175,13 +163,13 @@ eval_interval=100
 # num_save controls how frequent to save checkpoint. num_save=20 means that a
 # checkpoint will be saved every 5% of training. For longer training you would
 # want larger num_save to save more frequently, and vice versa.
-num_save=20
+num_save=50
 estimated_train_iter=$((${train_tokens} / ${seq_len} / ${global_batch_size}))
 save_interval=$((${estimated_train_iter} / ${num_save}))
 
 ## Activation checkpointing saves GPU memory, but reduces training speed
-# activation_checkpoint="true"
-activation_checkpoint="false"
+activation_checkpoint="true"
+# activation_checkpoint="false"
 
 ## Whether or not log optimizer states (norms, max abs values) to tensorboard.
 ## This is not required for training and might save GPU memory when turned off.
@@ -246,7 +234,7 @@ if [ "${no_pp}" = "true" ]; then
     jobname="${jobname}-nopp"
 fi
 jobname="${jobname}-seed${seed}"
-jobname="${jobname}-bwup${bsz_warmup_tokens_in_billion}B"
+jobname="${jobname}-ltd-from${ltd_start}-step${ltd_step}"
 
 username=$(whoami)
 output_home="/blob/users/${username}/project/data_efficient_gpt"
@@ -254,7 +242,7 @@ log_path="${output_home}/log/"
 checkpoint_path="${output_home}/checkpoint/${jobname}"
 ## Microsoft internal constraint: because tensorboard is logged by last rank,
 ## it's better to put the path in NFS instead of Blob.
-tensorboard_dir="/data/users/${username}/project/data_efficient_gpt/tensorboard/"
+tensorboard_dir="/vc_data/users/${username}/project/data_efficient_gpt/tensorboard/"
 tensorboard_path="${tensorboard_dir}${jobname}_${host}_${current_time}"
 mkdir -p ${log_path}
 mkdir -p ${checkpoint_path}
@@ -274,14 +262,15 @@ megatron_options=" \
     --init-method-std ${init_std} \
     --lr-decay-tokens ${lr_decay_tokens} \
     --lr-warmup-tokens ${lr_warmup_tokens} \
+    --micro-batch-size ${batch_size} \
     --exit-duration-in-mins ${exit_duration} \
-    --rampup-batch-size ${bsz_warmup_schedule} \
     --global-batch-size ${global_batch_size} \
     --num-layers ${num_layers} \
     --hidden-size ${hidden_size} \
     --num-attention-heads ${num_attn_heads} \
     --seq-length ${seq_len} \
     --max-position-embeddings ${seq_len} \
+    --train-tokens ${train_tokens} \
     --train-samples ${train_samples} \
     --lr ${lr} \
     --min-lr ${min_lr} \
@@ -296,17 +285,14 @@ megatron_options=" \
     --hysteresis 2 \
     --num-workers 0 \
     --fp16 \
-    --seed ${seed} \
     --load ${checkpoint_path} \
     --save ${checkpoint_path} \
+    --seed ${seed} \
+    --random-ltd \
     --tensorboard-queue-size 1 \
     --log-timers-to-tensorboard \
     --log-batch-size-to-tensorboard \
-    --log-validation-ppl-to-tensorboard"
-
-megatron_options_bszwarmup=" \
-    --micro-batch-size ${batch_size_1st_stage} \
-    --train-tokens ${train_tokens_1st_stage} \
+    --log-validation-ppl-to-tensorboard \
     --tensorboard-dir ${tensorboard_path}"
 
 if [ "${activation_checkpoint}" = "true" ]; then
@@ -320,20 +306,26 @@ megatron_options="${megatron_options} \
 fi
 
 template_json="ds_config_gpt_TEMPLATE.json"
-config_json="ds_config_gbs${global_batch_size}_mbs${batch_size_1st_stage}_log${log_interval}_zero${zero_stage}.json"
+config_json="ds_config_gbs${global_batch_size}_mbs${batch_size}_log${log_interval}_zero${zero_stage}_ltd_from${ltd_start}_step${ltd_step}.json"
 if [[ $zero_stage -gt 0 ]]; then
 sed "s/CONFIG_BATCH_SIZE/${global_batch_size}/" ${template_json} \
-    | sed "s/CONFIG_MBSIZE/${batch_size_1st_stage}/" \
+    | sed "s/CONFIG_MBSIZE/${batch_size}/" \
     | sed "s/LOG_INTERVAL/${log_interval}/" \
     | sed "s/ZERO_STAGE/${zero_stage}/" \
     | sed "s/PRESCALE_GRAD/false/" \
+    | sed "s/CONFIG_LTD_MIN/${ltd_start}/" \
+    | sed "s/CONFIG_LTD_MAX/${seq_len}/" \
+    | sed "s/CONFIG_LTD_STEP/${ltd_step}/" \
       > ${config_json}
 else
 sed "s/CONFIG_BATCH_SIZE/${global_batch_size}/" ${template_json} \
-    | sed "s/CONFIG_MBSIZE/${batch_size_1st_stage}/" \
+    | sed "s/CONFIG_MBSIZE/${batch_size}/" \
     | sed "s/LOG_INTERVAL/${log_interval}/" \
     | sed "s/ZERO_STAGE/${zero_stage}/" \
     | sed "s/PRESCALE_GRAD/true/" \
+    | sed "s/CONFIG_LTD_MIN/${ltd_start}/" \
+    | sed "s/CONFIG_LTD_MAX/${seq_len}/" \
+    | sed "s/CONFIG_LTD_STEP/${ltd_step}/" \
       > ${config_json}
 fi
 
@@ -351,58 +343,6 @@ fi
 if [ "${activation_checkpoint}" = "true" ]; then
 deepspeed_options="${deepspeed_options} \
     --deepspeed-activation-checkpointing"
-fi
-
-if [ "${resume_from_second_stage}" = "false" ]; then
-    ## When saving checkpoint to a storage with cache, their could be consistency
-    ## issue of the pointer to latest checkpoint. Here we find the correct pointer
-    ## and broadcast it to all nodes.
-    iteration_file="$checkpoint_path/latest_checkpointed_iteration.txt"
-    iteration_file_2="$checkpoint_path/latest"
-    iteration=0
-    for (( node = 0; node <= num_node-1; node++ ))
-    do
-        if $(ssh -q worker-"$node" "test -f \"$iteration_file\""); then
-            local_iteration=$(ssh -q worker-"$node" cat $iteration_file)
-            iteration=$(( ${local_iteration} > ${iteration} ? ${local_iteration} :  ${iteration} ))
-        fi
-    done
-    if [[ $iteration -gt 0 ]]; then
-        iteration_2="global_step${iteration}"
-        ds_ssh "echo $iteration > $iteration_file"
-        ds_ssh "echo $iteration_2 > $iteration_file_2"
-    fi
-
-    deepspeed --num_nodes $num_node_1st_stage --num_gpus $num_gpus_pernode_1st_stage ${dir}/../../../../pretrain_gpt.py ${megatron_options} ${megatron_options_bszwarmup} ${data_options} ${deepspeed_options} &> ${log_path}/${jobname}_${host}_${current_time}.log
-    sleep 120s
-fi
-
-## Full batch size second stage
-current_time=$(date "+%Y.%m.%d-%H.%M.%S")
-host="${HOSTNAME}"
-tensorboard_path="${tensorboard_dir}${jobname}_${host}_${current_time}"
-
-megatron_options_bszwarmup=" \
-        --micro-batch-size ${batch_size} \
-        --train-tokens ${train_tokens} \
-        --tensorboard-dir ${tensorboard_path}"
-
-template_json="ds_config_gpt_TEMPLATE.json"
-config_json="ds_config_gbs${global_batch_size}_mbs${batch_size}_log${log_interval}_zero${zero_stage}.json"
-if [[ $zero_stage -gt 0 ]]; then
-sed "s/CONFIG_BATCH_SIZE/${global_batch_size}/" ${template_json} \
-    | sed "s/CONFIG_MBSIZE/${batch_size}/" \
-    | sed "s/LOG_INTERVAL/${log_interval}/" \
-    | sed "s/ZERO_STAGE/${zero_stage}/" \
-    | sed "s/PRESCALE_GRAD/false/" \
-      > ${config_json}
-else
-sed "s/CONFIG_BATCH_SIZE/${global_batch_size}/" ${template_json} \
-    | sed "s/CONFIG_MBSIZE/${batch_size}/" \
-    | sed "s/LOG_INTERVAL/${log_interval}/" \
-    | sed "s/ZERO_STAGE/${zero_stage}/" \
-    | sed "s/PRESCALE_GRAD/true/" \
-      > ${config_json}
 fi
 
 ## When saving checkpoint to a storage with cache, their could be consistency
@@ -424,4 +364,4 @@ if [[ $iteration -gt 0 ]]; then
     ds_ssh "echo $iteration_2 > $iteration_file_2"
 fi
 
-deepspeed ${dir}/../../../../pretrain_gpt.py ${megatron_options} ${megatron_options_bszwarmup} ${data_options} ${deepspeed_options} &>> ${log_path}/${jobname}_${host}_${current_time}.log
+deepspeed ${dir}/../../../../pretrain_gpt.py ${megatron_options} ${data_options} ${deepspeed_options} &>> ${log_path}/${jobname}_${host}_${current_time}.log

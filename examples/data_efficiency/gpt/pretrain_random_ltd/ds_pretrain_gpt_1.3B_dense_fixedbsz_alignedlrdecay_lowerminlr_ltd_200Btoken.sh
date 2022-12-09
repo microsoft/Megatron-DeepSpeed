@@ -17,14 +17,14 @@ seq_len=2048
 ### provide better zero-shot eval results.
 
 ## GPT-3 Small 125M
-model_size=0.125
-num_layers=12
-hidden_size=768
-num_attn_heads=12
-global_batch_size=256
-lr=6.0e-4
-min_lr=1.0e-6
-init_std=0.02
+# model_size=0.125
+# num_layers=12
+# hidden_size=768
+# num_attn_heads=12
+# global_batch_size=256
+# lr=6.0e-4
+# min_lr=1.0e-6
+# init_std=0.02
 
 ## GPT-3 Medium 350M
 # model_size=0.35
@@ -47,14 +47,15 @@ init_std=0.02
 # init_std=0.015
 
 ## GPT-3 XL 1.3B
-# model_size=1.3
-# num_layers=24
-# hidden_size=2048
-# num_attn_heads=16
-# global_batch_size=512
+model_size=1.3
+num_layers=24
+hidden_size=2048
+num_attn_heads=16
+global_batch_size=512
 # lr=2.0e-4
-# min_lr=1.0e-6
-# init_std=0.013
+lr=3.0e-4
+min_lr=1.0e-6
+init_std=0.013
 
 ## GPT-3 2.7B
 # model_size=2.7
@@ -98,7 +99,7 @@ init_std=0.02
 ###############################################################################
 ### Training duration configs
 ## The main termination condition, original GPT-3 paper trains for 300B tokens.
-train_tokens_in_billion=300
+train_tokens_in_billion=200
 train_tokens=$((${train_tokens_in_billion} * 1000000000))
 
 ## train_samples is another termination condition and also affect the number of 
@@ -132,7 +133,7 @@ lr_decay_style="cosine"
 ### Parallelism configs
 ## Micro batch size per GPU
 ## Make sure that batch_size <= global_batch_size*pp_size*mp_size/num_gpus
-batch_size=4
+batch_size=8
 
 ## Model parallelism, 1 is no MP
 mp_size=1
@@ -142,7 +143,7 @@ pp_size=1
 no_pp="true"
 
 ## ZeRO stage
-zero_stage=0
+zero_stage=1
 
 ## Total number of GPUs. ds_ssh is from DeepSpeed library.
 num_gpus=$(($(ds_ssh nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)-2))
@@ -151,6 +152,10 @@ num_node=$(( ${num_gpus} / ${num_gpus_pernode} ))
 ## Data parallel size. Currently not used as any config, just for record.
 dp_size=$(( ${num_gpus} / ${pp_size} / ${mp_size} ))
 ###############################################################################
+### LTD configs
+ltd_start=128
+ltd_step=133333
+###############################################################################
 ### Misc configs
 log_interval=100
 eval_iters=10
@@ -158,13 +163,13 @@ eval_interval=100
 # num_save controls how frequent to save checkpoint. num_save=20 means that a
 # checkpoint will be saved every 5% of training. For longer training you would
 # want larger num_save to save more frequently, and vice versa.
-num_save=20
+num_save=50
 estimated_train_iter=$((${train_tokens} / ${seq_len} / ${global_batch_size}))
 save_interval=$((${estimated_train_iter} / ${num_save}))
 
 ## Activation checkpointing saves GPU memory, but reduces training speed
-# activation_checkpoint="true"
-activation_checkpoint="false"
+activation_checkpoint="true"
+# activation_checkpoint="false"
 
 ## Whether or not log optimizer states (norms, max abs values) to tensorboard.
 ## This is not required for training and might save GPU memory when turned off.
@@ -229,6 +234,7 @@ if [ "${no_pp}" = "true" ]; then
     jobname="${jobname}-nopp"
 fi
 jobname="${jobname}-seed${seed}"
+jobname="${jobname}-ltd-from${ltd_start}-step${ltd_step}"
 
 username=$(whoami)
 output_home="/blob/users/${username}/project/data_efficient_gpt"
@@ -236,7 +242,7 @@ log_path="${output_home}/log/"
 checkpoint_path="${output_home}/checkpoint/${jobname}"
 ## Microsoft internal constraint: because tensorboard is logged by last rank,
 ## it's better to put the path in NFS instead of Blob.
-tensorboard_dir="/data/users/${username}/project/data_efficient_gpt/tensorboard/"
+tensorboard_dir="/vc_data/users/${username}/project/data_efficient_gpt/tensorboard/"
 tensorboard_path="${tensorboard_dir}${jobname}_${host}_${current_time}"
 mkdir -p ${log_path}
 mkdir -p ${checkpoint_path}
@@ -279,9 +285,10 @@ megatron_options=" \
     --hysteresis 2 \
     --num-workers 0 \
     --fp16 \
-    --seed ${seed} \
     --load ${checkpoint_path} \
     --save ${checkpoint_path} \
+    --seed ${seed} \
+    --random-ltd \
     --tensorboard-queue-size 1 \
     --log-timers-to-tensorboard \
     --log-batch-size-to-tensorboard \
@@ -299,13 +306,16 @@ megatron_options="${megatron_options} \
 fi
 
 template_json="ds_config_gpt_TEMPLATE.json"
-config_json="ds_config_gbs${global_batch_size}_mbs${batch_size}_log${log_interval}_zero${zero_stage}.json"
+config_json="ds_config_gbs${global_batch_size}_mbs${batch_size}_log${log_interval}_zero${zero_stage}_ltd_from${ltd_start}_step${ltd_step}.json"
 if [[ $zero_stage -gt 0 ]]; then
 sed "s/CONFIG_BATCH_SIZE/${global_batch_size}/" ${template_json} \
     | sed "s/CONFIG_MBSIZE/${batch_size}/" \
     | sed "s/LOG_INTERVAL/${log_interval}/" \
     | sed "s/ZERO_STAGE/${zero_stage}/" \
     | sed "s/PRESCALE_GRAD/false/" \
+    | sed "s/CONFIG_LTD_MIN/${ltd_start}/" \
+    | sed "s/CONFIG_LTD_MAX/${seq_len}/" \
+    | sed "s/CONFIG_LTD_STEP/${ltd_step}/" \
       > ${config_json}
 else
 sed "s/CONFIG_BATCH_SIZE/${global_batch_size}/" ${template_json} \
@@ -313,6 +323,9 @@ sed "s/CONFIG_BATCH_SIZE/${global_batch_size}/" ${template_json} \
     | sed "s/LOG_INTERVAL/${log_interval}/" \
     | sed "s/ZERO_STAGE/${zero_stage}/" \
     | sed "s/PRESCALE_GRAD/true/" \
+    | sed "s/CONFIG_LTD_MIN/${ltd_start}/" \
+    | sed "s/CONFIG_LTD_MAX/${seq_len}/" \
+    | sed "s/CONFIG_LTD_STEP/${ltd_step}/" \
       > ${config_json}
 fi
 
