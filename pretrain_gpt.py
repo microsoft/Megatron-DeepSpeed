@@ -240,7 +240,8 @@ def forward_step(data_iterator, model):
 
     if args.data_efficiency_curriculum_learning:
         args.curriculum_seqlen = tokens.size()[1]
-        if args.data_efficiency_curriculum_learning_seqlen_type == 'seqlen_reshape':
+        if hasattr(args, 'data_efficiency_curriculum_learning_seqlen_type') and \
+            args.data_efficiency_curriculum_learning_seqlen_type == 'seqlen_reshape':
             args.data_efficiency_curriculum_learning_numel = torch.numel(tokens)
 
     if args.mos or args.kd:
