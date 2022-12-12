@@ -437,6 +437,12 @@ class TransformerLanguageModel(MegatronModule):
         encoder_state_dict = self.encoder.state_dict_for_save_checkpoint(
                 destination, prefix, keep_vars)
         if args.random_ltd:
+            # When using random-LTD, it is required to call remove_random_ltd_state_dict
+            # during model checkpoint saving to transfer the random-LTD-wrapped
+            # layers back to original layers. This will help to remove the dependency
+            # to random-LTD inside the checkpoint, so that during evaluation or
+            # finetuning of the checkpoint there is no need to depend on random-LTD
+            # again.
             from deepspeed.runtime.data_pipeline.data_routing.helper import remove_random_ltd_state_dict
             encoder_state_dict = remove_random_ltd_state_dict(encoder_state_dict)
         # MoE states need to be handled separately by DeepSpeed engine, thus

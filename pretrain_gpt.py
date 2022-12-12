@@ -166,7 +166,7 @@ def get_batch_pipe(data):
         args.reset_position_ids,
         args.reset_attention_mask,
         args.eod_mask_loss)
-    if args.curriculum_learning and args.curriculum_seqlen < tokens.size()[1]:
+    if args.curriculum_learning_legacy and args.curriculum_seqlen < tokens.size()[1]:
         # seqlen-based curriculum learning
         # tokens, position_ids, labels, loss_mask have size [batch size, seqlen]
         tokens = tokens[:, :args.curriculum_seqlen].contiguous()
@@ -209,7 +209,7 @@ def calculate_mos_loss(args, stu_output, teacher_model, tokens, position_ids, at
     
     if teacher_model:
         with torch.no_grad():
-            if args.curriculum_learning and args.curriculum_seqlen < args.seq_length:
+            if args.curriculum_learning_legacy and args.curriculum_seqlen < args.seq_length:
                 assert args.curriculum_seqlen is not None
                 curriculum_seqlen = args.curriculum_seqlen
                 tokens = tokens[:, :curriculum_seqlen].contiguous()
@@ -247,14 +247,14 @@ def forward_step(data_iterator, model):
     if args.mos or args.kd:
         # The forward func can return either the loss or the logits, depending on whether passing in the labels or not.
         stu_output, *other_losses = model(tokens, position_ids, attention_mask)
-        if args.curriculum_learning and args.curriculum_seqlen < args.seq_length:
+        if args.curriculum_learning_legacy and args.curriculum_seqlen < args.seq_length:
             assert args.curriculum_seqlen is not None
             labels = labels[:, :args.curriculum_seqlen].contiguous()
         output_tensor = mpu.vocab_parallel_cross_entropy(stu_output.contiguous().float(), labels)
     else:
         output_tensor, *other_losses = model(tokens, position_ids, attention_mask,
                                             labels=labels)
-    if args.curriculum_learning and args.curriculum_seqlen < args.seq_length:
+    if args.curriculum_learning_legacy and args.curriculum_seqlen < args.seq_length:
         loss_mask = loss_mask[:, :args.curriculum_seqlen].contiguous()
 
     moe_losses = []

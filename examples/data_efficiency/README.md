@@ -1,6 +1,6 @@
 This directory includes GPT-3/BERT pretraining example scripts for DeepSpeed Data Efficiency Library technologies (curriculum learning, random-LTD, and the two composed together).
 
-You need to install updated DeepSpeed version (>=0.7.7), which contains the DeepSpeed Data Efficiency Library.
+You need to install updated DeepSpeed version (>=0.8.0), which contains the DeepSpeed Data Efficiency Library.
 
 Additional tutorial can be found at [DeepSpeed website](https://www.deepspeed.ai/tutorials/data-efficiency/).
 

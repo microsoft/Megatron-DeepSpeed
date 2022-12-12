@@ -121,9 +121,9 @@ def pretrain(train_valid_test_dataset_provider,
             open(args.deepspeed_config, 'r', encoding='utf-8'))
         if "curriculum_learning" in args.deepspeed_configuration and \
             "enabled" in args.deepspeed_configuration["curriculum_learning"]:
-            args.curriculum_learning = args.deepspeed_configuration[ \
+            args.curriculum_learning_legacy = args.deepspeed_configuration[ \
                 "curriculum_learning"]["enabled"]
-        if args.curriculum_learning and not args.no_pipeline_parallel:
+        if args.curriculum_learning_legacy and not args.no_pipeline_parallel:
             from deepspeed.runtime.data_pipeline.curriculum_scheduler \
                 import CurriculumScheduler
             args.curriculum_scheduler = CurriculumScheduler( \
@@ -481,12 +481,19 @@ def setup_model_and_optimizer(model_provider_func, teacher=False,
         pp = mpu.get_pipeline_model_parallel_world_size()
         if args.data_efficiency_curriculum_learning and build_train_valid_test_datasets_provider is not None:
             train_ds = None
+            # Only need to build dataset on tp rank 0 since Megatron has the
+            # broadcast_data() function that broadcast data from tp rank 0.
             if mpu.get_tensor_model_parallel_rank() == 0:
                 # Number of train/valid/test samples.
                 if args.train_samples:
                     train_samples = args.train_samples
                 else:
                     train_samples = args.train_iters * args.global_batch_size
+                # eval_iters and test_iters here are not actually used, only for
+                # satisfying the input of build_train_valid_test_datasets_provider.
+                # We only need to build the training data here. And we follow
+                # baseline's logic to build eval/test dataset later in
+                # build_train_valid_test_data_iterators.
                 eval_iters = (args.train_iters // args.eval_interval + 1) * \
                             args.eval_iters
                 test_iters = args.eval_iters
@@ -800,7 +807,7 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
                               args.consumed_train_samples)
             writer.add_scalar('seqlen/actual_seq_length vs tokens', args.actual_seq_length,
                               args.consumed_train_tokens)
-        if args.curriculum_learning or args.data_efficiency_curriculum_learning:
+        if args.curriculum_learning_legacy or args.data_efficiency_curriculum_learning:
             writer.add_scalar('seqlen/curriculum_seqlen', args.curriculum_seqlen,
                               iteration)
             writer.add_scalar('seqlen/curriculum_seqlen vs samples', args.curriculum_seqlen,
@@ -940,7 +947,7 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
             log_string += ' num zeros: {:.1f} |'.format(num_zeros_in_grad)
         if params_norm is not None:
             log_string += ' params norm: {:.3f} |'.format(params_norm)
-        if args.curriculum_learning or args.data_efficiency_curriculum_learning:
+        if args.curriculum_learning_legacy or args.data_efficiency_curriculum_learning:
             log_string += ' curriculum seqlen: {:5d} |'.format(args.curriculum_seqlen)
         if args.random_ltd:
             log_string += ' random ltd reserved length: {:5d} |'.format(args.random_ltd_reserved_length)
@@ -1019,7 +1026,7 @@ def train(forward_step_func, model, optimizer, lr_scheduler,
                                 get_num_microbatches()
             model[0].set_train_batch_size(global_batch_size)
 
-        if args.curriculum_learning and not args.no_pipeline_parallel:
+        if args.curriculum_learning_legacy and not args.no_pipeline_parallel:
             args.curriculum_seqlen = args.curriculum_scheduler.update_difficulty( \
                     args.iteration + 1)
         loss_dict, skipped_iter, grad_norm, num_zeros_in_grad = \
@@ -1034,14 +1041,15 @@ def train(forward_step_func, model, optimizer, lr_scheduler,
                                        args.micro_batch_size * \
                                        get_num_microbatches()
         args.consumed_train_samples += new_samples
+        # This actual_seq_length is used for actual consumed tokens calculation, flops calculation, and logging.
         args.actual_seq_length = args.seq_length
-        if args.curriculum_learning or args.data_efficiency_curriculum_learning:
+        if args.curriculum_learning_legacy or args.data_efficiency_curriculum_learning:
             args.actual_seq_length = args.curriculum_seqlen
         if args.random_ltd:
             args.random_ltd_reserved_length = model[0].random_ltd_scheduler.get_current_seq()
             if args.random_ltd_reserved_length < args.actual_seq_length:
                 args.actual_seq_length = (args.actual_seq_length * (args.num_layers - args.random_ltd_layer_num) + args.random_ltd_reserved_length * args.random_ltd_layer_num) // args.num_layers
-        if args.curriculum_learning or args.data_efficiency_curriculum_learning:
+        if args.curriculum_learning_legacy or args.data_efficiency_curriculum_learning:
             if hasattr(args, 'data_efficiency_curriculum_learning_numel'):
                 act_mbsz = args.data_efficiency_curriculum_learning_numel / args.curriculum_seqlen
                 act_token = act_mbsz * args.actual_seq_length
@@ -1128,7 +1136,7 @@ def evaluate(forward_step_func, data_iterator, model, verbose=False):
     for model_module in model:
         model_module.eval()
 
-    if args.curriculum_learning and not args.no_pipeline_parallel:
+    if args.curriculum_learning_legacy and not args.no_pipeline_parallel:
         # When curriculum learning is used with pipeline parallelism, we need
         # this logic to ensure that the eval data is not truncated. If there
         # is a seqlen change due to that, we need to call
@@ -1184,7 +1192,7 @@ def evaluate(forward_step_func, data_iterator, model, verbose=False):
     for key in total_loss_dict:
         total_loss_dict[key] /= args.eval_iters * get_num_microbatches()
 
-    if args.curriculum_learning and not args.no_pipeline_parallel:
+    if args.curriculum_learning_legacy and not args.no_pipeline_parallel:
         # roll back to actual curriculum seqlen at the end of eval.
         args.curriculum_seqlen = args.curriculum_scheduler.update_difficulty( \
             args.iteration + 1)

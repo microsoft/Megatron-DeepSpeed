@@ -248,7 +248,7 @@ def parse_args(extra_args_provider=None, defaults={},
             'for distribute-checkpointed-activations to work you '\
             'need to enable checkpoint-activations'
 
-    args.curriculum_learning = False
+    args.curriculum_learning_legacy = False
     args.compression_training = False
 
     # AML

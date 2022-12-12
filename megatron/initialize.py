@@ -206,7 +206,7 @@ def _initialize_distributed():
             else:
                 args.local_rank = device
 
-            torch.cuda.set_device(device) 
+            torch.cuda.set_device(device) # only do so when device_count > 0
 
         # Call the init process
         init_method = 'tcp://'

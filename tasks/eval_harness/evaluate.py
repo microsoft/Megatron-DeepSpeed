@@ -409,7 +409,7 @@ def main():
         # adaptive_seq_len hack #1:
         # CL automatically enables reset_activation_shape() which allows us to change input shapes
         # and it also reshapes the attenion scores in attention_mask_func
-        args.curriculum_learning = 1
+        args.curriculum_learning_legacy = 1
 
     task_list = ALL_TASKS if args.task_list == 'all' else args.task_list.split(',')
     task_dict = tasks.get_task_dict(task_list)
