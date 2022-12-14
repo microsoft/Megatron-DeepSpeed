@@ -21,7 +21,6 @@ import time
 
 import numpy as np
 import torch
-
 from megatron import fused_kernels
 from megatron import get_adlr_autoresume
 from megatron import get_args
@@ -30,7 +29,7 @@ from megatron import mpu
 from megatron.global_vars import set_global_variables
 from megatron.mpu import (set_tensor_model_parallel_rank,
                           set_tensor_model_parallel_world_size)
-
+from deepspeed.accelerator import get_accelerator
 import deepspeed
 import deepspeed.utils.groups as groups
 
@@ -46,7 +45,7 @@ def initialize_megatron(extra_args_provider=None, args_defaults={},
     """
     if not allow_no_cuda:
         # Make sure cuda is available.
-        assert torch.cuda.is_available(), 'Megatron requires CUDA.'
+        assert get_accelerator().is_available(), 'Megatron requires accelerator.'
 
     # Parse args, build tokenizer, and set adlr-autoresume,
     # tensorboard-writer, and timers.
@@ -107,7 +106,11 @@ def _compile_dependencies():
         compile_helper()
         print('>>> done with dataset index builder. Compilation time: {:.3f} '
               'seconds'.format(time.time() - start_time), flush=True)
-
+        
+    # TODO FIXME xpu compatible, compile the following kernel
+    if not get_accelerator().device_name() == 'cuda':
+        print(">fused kernel is only supported in cuda, skip loading fused kernel")
+        return 
     # ==================
     # Load fused kernels
     # ==================
@@ -184,7 +187,7 @@ def setup_deepspeed_random_and_activation_checkpointing(args):
 def _initialize_distributed():
     """Initialize torch.distributed and mpu."""
     args = get_args()
-    device_count = torch.cuda.device_count()
+    device_count = get_accelerator().device_count()
     if torch.distributed.is_initialized():
 
         if args.rank == 0:
@@ -205,7 +208,7 @@ def _initialize_distributed():
             else:
                 args.local_rank = device
 
-        torch.cuda.set_device(device) 
+        get_accelerator().set_device(device) 
 
         # Call the init process
         init_method = 'tcp://'
@@ -251,7 +254,7 @@ def _set_random_seed(seed_):
         random.seed(seed)
         np.random.seed(seed)
         torch.manual_seed(seed)
-        if torch.cuda.device_count() > 0:
+        if get_accelerator().device_count() > 0:
             mpu.model_parallel_cuda_manual_seed(seed)
     else:
         raise ValueError('Seed ({}) should be a positive integer.'.format(seed))
@@ -279,7 +282,7 @@ def _is_rank_0():
     """Check whether it is rank 0. For AML, check if it is rank 0 of a node"""
     if torch.distributed.is_initialized():
         if torch.distributed.get_rank() == 0 or (
-            'AZUREML_EXPERIMENT_ID' in os.environ and torch.distributed.get_rank() % torch.cuda.device_count() == 0
+            'AZUREML_EXPERIMENT_ID' in os.environ and torch.distributed.get_rank() % get_accelerator().device_count() == 0
             ):
             return True
         else:

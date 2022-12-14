@@ -17,14 +17,18 @@
 
 import torch
 from torch._six import inf
+from deepspeed.accelerator import get_accelerator
 
-from apex.multi_tensor_apply import multi_tensor_applier
-import amp_C
+# TODO FIXME xpu compatible
+if get_accelerator().device_name() == 'cuda':
+    from apex.multi_tensor_apply import multi_tensor_applier
+    import amp_C
+
 
 from megatron import mpu
 from megatron.model.module import param_is_not_shared
 from megatron.mpu.layers import param_is_not_tensor_parallel_duplicate
-
+from deepspeed.accelerator import get_accelerator
 
 def clip_grad_norm_fp32(parameters, max_norm, norm_type=2):
     """Clips gradient norm of an iterable of parameters whose gradients
@@ -61,7 +65,7 @@ def clip_grad_norm_fp32(parameters, max_norm, norm_type=2):
         grad = param.grad.detach()
         if grad_not_none:
             # Make sure the grads are in fp32
-            assert param.grad.type() == 'torch.cuda.FloatTensor'
+            assert param.grad.type() == 'torch.{}.FloatTensor'.format(get_accelerator().device_name())
             grads.append(grad)
         if grad_not_none and is_not_shared and is_not_tp_duplicate:
             grads_for_norm.append(grad)
@@ -74,7 +78,7 @@ def clip_grad_norm_fp32(parameters, max_norm, norm_type=2):
     # Calculate norm.
     if norm_type == inf:
         total_norm = max(grad.abs().max() for grad in grads_for_norm)
-        total_norm_cuda = torch.cuda.FloatTensor([float(total_norm)])
+        total_norm_cuda = get_accelerator().FloatTensor([float(total_norm)])
         # Take max across all model-parallel GPUs.
         torch.distributed.all_reduce(total_norm_cuda,
                                      op=torch.distributed.ReduceOp.MAX,
@@ -82,8 +86,9 @@ def clip_grad_norm_fp32(parameters, max_norm, norm_type=2):
         total_norm = total_norm_cuda[0].item()
 
     else:
-        if norm_type == 2.0:
-            dummy_overflow_buf = torch.cuda.IntTensor([0])
+        # TODO FIXME xpu compatible
+        if get_accelerator().device_name() == 'cuda' and norm_type == 2.0:
+            dummy_overflow_buf = get_accelerator().IntTensor([0])
             # Use apex's multi-tensor applier for efficiency reasons.
             # Multi-tensor applier takes a function and a list of list
             # and performs the operation on that list all in one kernel.
@@ -110,8 +115,9 @@ def clip_grad_norm_fp32(parameters, max_norm, norm_type=2):
 
     # Scale.
     clip_coeff = max_norm / (total_norm + 1.0e-6)
-    if clip_coeff < 1.0:
-        dummy_overflow_buf = torch.cuda.IntTensor([0])
+    # TODO FIXME xpu compatible
+    if get_accelerator().device_name() == 'cuda' and clip_coeff < 1.0:
+        dummy_overflow_buf = get_accelerator().IntTensor([0])
         multi_tensor_applier(amp_C.multi_tensor_scale,
                              dummy_overflow_buf,
                              [grads, grads],

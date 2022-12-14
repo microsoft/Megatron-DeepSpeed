@@ -22,13 +22,21 @@ from megatron import get_args
 from megatron import mpu
 from .module import MegatronModule
 from megatron.model.enums import AttnMaskType, LayerType, AttnType
-from megatron.model import LayerNorm
+
+from deepspeed.accelerator import get_accelerator
+if get_accelerator().device_name() == "cuda":
+    from megatron.model import LayerNorm
+else:
+    # TODO FIXME xpu compatible
+    from torch.nn import LayerNorm
+    
 from megatron.model.fused_softmax import FusedScaleMaskSoftmax
 from megatron.model.fused_bias_gelu import bias_gelu_impl
 from megatron.model.utils import attention_mask_func, openai_gelu, erf_gelu
 from torch import distributed as dist
 import deepspeed
 from deepspeed.moe.layer import MoE
+from deepspeed.accelerator import get_accelerator
 # flags required to enable jit fusion kernels
 torch._C._jit_set_profiling_mode(False)
 torch._C._jit_set_profiling_executor(False)
@@ -275,7 +283,7 @@ class ParallelAttention(MegatronModule):
             output_size[2],
             output_size[3],
             dtype=query_layer.dtype,
-            device=torch.cuda.current_device())
+            device=get_accelerator().current_device_name())
 
         # Raw attention scores. [b * np, sq, sk]
         matmul_result = torch.baddbmm(
