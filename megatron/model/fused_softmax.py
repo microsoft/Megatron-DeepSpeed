@@ -110,10 +110,7 @@ class FusedScaleMaskSoftmax(torch.nn.Module):
             'both fp16 and bf16 flags cannot be active at the same time.'
         self.input_in_float16 = self.input_in_fp16 or self.input_in_bf16
         self.attn_mask_type = attn_mask_type
-        # TODO FIXME xpu compatible
         self.scaled_masked_softmax_fusion = scaled_masked_softmax_fusion
-        
-        
         self.mask_func = mask_func
         self.softmax_in_fp32 = softmax_in_fp32
         self.scale = scale

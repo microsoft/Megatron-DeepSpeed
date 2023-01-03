@@ -31,7 +31,6 @@ from megatron.utils import average_losses_across_data_parallel_group
 import deepspeed
 from deepspeed.runtime.utils import see_memory_usage
 from deepspeed.accelerator.real_accelerator import get_accelerator
-
 import os
 import subprocess
 

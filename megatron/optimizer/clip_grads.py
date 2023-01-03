@@ -19,7 +19,6 @@ import torch
 from torch._six import inf
 from deepspeed.accelerator import get_accelerator
 
-# TODO FIXME xpu compatible
 if get_accelerator().device_name() == 'cuda':
     from apex.multi_tensor_apply import multi_tensor_applier
     import amp_C
@@ -86,7 +85,6 @@ def clip_grad_norm_fp32(parameters, max_norm, norm_type=2):
         total_norm = total_norm_cuda[0].item()
 
     else:
-        # TODO FIXME xpu compatible
         if get_accelerator().device_name() == 'cuda' and norm_type == 2.0:
             dummy_overflow_buf = get_accelerator().IntTensor([0])
             # Use apex's multi-tensor applier for efficiency reasons.
@@ -115,7 +113,6 @@ def clip_grad_norm_fp32(parameters, max_norm, norm_type=2):
 
     # Scale.
     clip_coeff = max_norm / (total_norm + 1.0e-6)
-    # TODO FIXME xpu compatible
     if get_accelerator().device_name() == 'cuda' and clip_coeff < 1.0:
         dummy_overflow_buf = get_accelerator().IntTensor([0])
         multi_tensor_applier(amp_C.multi_tensor_scale,

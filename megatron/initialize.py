@@ -107,7 +107,6 @@ def _compile_dependencies():
         print('>>> done with dataset index builder. Compilation time: {:.3f} '
               'seconds'.format(time.time() - start_time), flush=True)
         
-    # TODO FIXME xpu compatible, compile the following kernel
     if not get_accelerator().device_name() == 'cuda':
         print(">fused kernel is only supported in cuda, skip loading fused kernel")
         return 

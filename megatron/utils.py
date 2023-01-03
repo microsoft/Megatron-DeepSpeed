@@ -21,7 +21,6 @@ import torch
 from torch.nn.parallel import DistributedDataParallel as torchDDP
 
 from deepspeed.accelerator import get_accelerator
- # TODO FIXME xpu compatible
 if get_accelerator().device_name == 'cuda':
     from apex.multi_tensor_apply import multi_tensor_applier
     import amp_C
@@ -76,7 +75,6 @@ def calc_params_l2_norm(model):
             [params_data],
             False # no per-parameter norm
         )
-    #TODO : FIXME xpu compatible
     else :
         norm = torch.norm(params_data,p=2.0)
     norm_2 = norm * norm

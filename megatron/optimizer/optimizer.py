@@ -267,11 +267,12 @@ class Float16OptimizerWithFloat16Params(MegatronOptimizer):
                         param_group['params'][i] = param
 
                     else:
+                        device_name = get_accelerator().device_name()
                         raise TypeError('Wrapped parameters must be one of '
-                                        'torch.cuda(xpu).FloatTensor,  '
-                                        'torch.cuda(xpu).HalfTensor, or '
-                                        'torch.cuda(xpu).BFloat16Tensor. '
-                                        'Received {}'.format(param.type()))
+                                        'torch.{}.FloatTensor,  '
+                                        'torch.{}.HalfTensor, or '
+                                        'torch.{}.BFloat16Tensor. '
+                                        'Received {}'.format(device_name,device_name,device_name,param.type()))
 
             self.float16_groups.append(float16_params_this_group)
             self.fp32_from_float16_groups.append(

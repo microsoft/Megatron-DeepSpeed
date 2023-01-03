@@ -22,14 +22,7 @@ from megatron import get_args
 from megatron import mpu
 from .module import MegatronModule
 from megatron.model.enums import AttnMaskType, LayerType, AttnType
-
-from deepspeed.accelerator import get_accelerator
-if get_accelerator().device_name() == "cuda":
-    from megatron.model import LayerNorm
-else:
-    # TODO FIXME xpu compatible
-    from torch.nn import LayerNorm
-    
+from megatron.model import LayerNorm
 from megatron.model.fused_softmax import FusedScaleMaskSoftmax
 from megatron.model.fused_bias_gelu import bias_gelu_impl
 from megatron.model.utils import attention_mask_func, openai_gelu, erf_gelu
