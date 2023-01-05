@@ -505,14 +505,14 @@ def sample_sequence_batch(model, context_tokens, context_lengths,
 
         layer_past = None
         batch_size = context_tokens.size(0)
-        is_done = torch.zeros([batch_size]).byte().to(_accelerator().device_name())
+        is_done = torch.zeros([batch_size]).byte().to(get_accelerator().device_name())
         tokens = context_tokens
         if maxlen is None:
             maxlen = args.seq_length - 1
             if maxlen > (org_context_length + args.out_seq_length):
                 maxlen = org_context_length + args.out_seq_length
 
-        lengths = torch.ones([batch_size]).long().to(_accelerator().device_name()) * maxlen
+        lengths = torch.ones([batch_size]).long().to(get_accelerator().device_name()) * maxlen
 
         while context_length <= (maxlen):
             if args.recompute:
