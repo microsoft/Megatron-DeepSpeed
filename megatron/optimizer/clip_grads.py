@@ -85,21 +85,23 @@ def clip_grad_norm_fp32(parameters, max_norm, norm_type=2):
         total_norm = total_norm_cuda[0].item()
 
     else:
-        if get_accelerator().device_name() == 'cuda' and norm_type == 2.0:
-            dummy_overflow_buf = get_accelerator().IntTensor([0])
-            # Use apex's multi-tensor applier for efficiency reasons.
-            # Multi-tensor applier takes a function and a list of list
-            # and performs the operation on that list all in one kernel.
-            grad_norm, _ = multi_tensor_applier(
-                amp_C.multi_tensor_l2norm,
-                dummy_overflow_buf,
-                [grads_for_norm],
-                False # no per-parameter norm
-            )
+        if norm_type == 2.0:
+            if get_accelerator().device_name() == 'cuda':
+                dummy_overflow_buf = get_accelerator().IntTensor([0])
+                # Use apex's multi-tensor applier for efficiency reasons.
+                # Multi-tensor applier takes a function and a list of list
+                # and performs the operation on that list all in one kernel.
+                grad_norm, _ = multi_tensor_applier(
+                    amp_C.multi_tensor_l2norm,
+                    dummy_overflow_buf,
+                    [grads_for_norm],
+                    False # no per-parameter norm
+                )
+            else:
+                grad_norm = torch.norm(grads_for_norm,p=2.0)
             # Since we will be summing across data parallel groups,
             # we need the pow(norm-type).
             total_norm = grad_norm ** norm_type
-
         else:
             for grad in grads_for_norm:
                 grad_norm = torch.norm(grad, norm_type)
@@ -113,12 +115,16 @@ def clip_grad_norm_fp32(parameters, max_norm, norm_type=2):
 
     # Scale.
     clip_coeff = max_norm / (total_norm + 1.0e-6)
-    if get_accelerator().device_name() == 'cuda' and clip_coeff < 1.0:
-        dummy_overflow_buf = get_accelerator().IntTensor([0])
-        multi_tensor_applier(amp_C.multi_tensor_scale,
-                             dummy_overflow_buf,
-                             [grads, grads],
-                             clip_coeff)
+    if clip_coeff < 1.0:
+        if get_accelerator().device_name() == 'cuda':
+            dummy_overflow_buf = get_accelerator().IntTensor([0])
+            multi_tensor_applier(amp_C.multi_tensor_scale,
+                                dummy_overflow_buf,
+                                [grads, grads],
+                                clip_coeff)
+        else:
+            for g in grads:
+                g.detach().mul_(clip_coeff.to(g.device))
 
     return total_norm
 
