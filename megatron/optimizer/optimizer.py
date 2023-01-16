@@ -48,7 +48,7 @@ def _multi_tensor_copy_this_to_that(this, that, overflow_buf=None):
     We don't have a blfoat16 implementation so for now if the overflow_buf
     is not provided, we default back to simple loop copy to be compatible
     with bfloat16."""
-    if overflow_buf:
+    if get_accelerator().device_name() == 'cuda' and overflow_buf:
         from apex.multi_tensor_apply import multi_tensor_applier
         import amp_C
 
