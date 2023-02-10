@@ -1,0 +1,75 @@
+$schema: https://componentsdk.azureedge.net/jsonschema/DistributedComponent.json
+description: "FIM GPT Pretraining MoE"
+display_name: FIM-GPT-Pretraining-MoE
+environment:
+  docker:
+    build:
+      dockerfile: file:Dockerfile
+
+
+  # docker: 
+    # image: b5476ead59e14b909c1c0afdc3422078.azurecr.io/megatron-deepspeed-switch-moe-128-1b-bs-4
+  #   image: mcr.microsoft.com/azureml/curated/acpt-pytorch-1.11-py38-cuda11.5-gpu
+  # conda:
+  #   conda_dependencies:
+  #     name: project_environment
+  #     channels:
+  #     - defaults
+  #     dependencies:
+  #     - python=3.8.13
+  #     - pip:
+  #       - wandb
+  #       - deepspeed==0.8.0
+  #       - regex
+  # build:
+  #   path: ./
+  #   build.dockerfile_path:
+  #     Dockerfile
+  os: Linux
+inputs: 
+  train_dataset: 
+    description: Training dataset
+    optional: false
+    type: path
+  vocab_dataset: 
+    description: Vocab dataset
+    optional: false
+    type: path
+  num_experts: 
+    description: Number of experts
+    optional: false
+    type: int
+is_deterministic: true
+meta: 
+  requireGpu: true
+name: pretraining.pretrain_moe
+outputs: 
+  model_checkpoint: 
+    description: "Model checkpoints"
+    optional: false
+    type: path
+  logging_path: 
+    description: "Logging path"
+    optional: false
+    type: path
+launcher:
+  type: torch.distributed
+  additional_arguments: >    
+    ls && ./pretrain_gpt_moe.sh {inputs.train_dataset} {inputs.vocab_dataset} {outputs.model_checkpoint} {outputs.logging_path} {inputs.num_experts}
+
+
+
+# chmod u+x /home/megatron/Megatron-DeepSpeed/examples/MoE/ds_pretrain_gpt_350M_MoE128.sh &&    /home/megatron/Megatron-DeepSpeed/examples/MoE/ds_pretrain_gpt_350M_MoE128.sh {inputs.train_dataset} {inputs.vocab_dataset} {outputs.model_checkpoint} {outputs.logging_path}
+
+
+
+# chmod u+x ./pretrain_gpt_moe.sh &&    ./pretrain_gpt_moe.sh {inputs.train_dataset} {inputs.vocab_dataset} {outputs.model_checkpoint} {outputs.logging_path} {inputs.num_experts}
+# cd ./megatron/data && make && cd ../../ &&
+    # ./pretrain_gpt_moe.sh {inputs.train_dataset} {inputs.vocab_dataset} {outputs.model_checkpoint} {outputs.logging_path} {inputs.num_experts}
+# ls && ./pretrain_gpt_moe.sh {inputs.train_dataset} {inputs.vocab_dataset} {outputs.model_checkpoint} {outputs.logging_path} {inputs.num_experts}
+# ls && ./examples/MoE/ds_pretrain_gpt_350M_MoE128.sh {inputs.train_dataset} {inputs.vocab_dataset} {outputs.model_checkpoint} {outputs.logging_path}
+#chmod u+x /home/megatron/Megatron-DeepSpeed/examples/MoE/ds_pretrain_gpt_350M_MoE128.sh &&    /home/megatron/Megatron-DeepSpeed/examples/MoE/ds_pretrain_gpt_350M_MoE128.sh {inputs.train_dataset} {inputs.vocab_dataset} {outputs.model_checkpoint} {outputs.logging_path}
+tags: 
+  author: misantac@microsoft.com
+type: DistributedComponent
+version: 0.1.0

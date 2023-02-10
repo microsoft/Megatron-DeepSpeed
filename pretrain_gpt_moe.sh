@@ -1,4 +1,13 @@
 #!/bin/bash
+
+
+data_path=$1  # path to data which contains binarized data for each directions
+vocab_path=$2 # path to vocab
+output_path=$3 # path to model checkpoints
+logging_path=$4 # path to logging
+num_e=$5  # number of experts
+
+
 DIR=`pwd`
 ###############################################################################
 ### Main configs
@@ -127,11 +136,16 @@ NUM_GPUS=64
 EP_SIZE=1
 # EP_SIZE=128
 
+# EP_SIZE = num_e
+
 if [[ $EP_SIZE -gt $NUM_GPUS ]]; then
     EP_PARALLEL_SIZE=$NUM_GPUS
 else
     EP_PARALLEL_SIZE=$EP_SIZE
 fi
+
+echo "num experts $(EP_SIZE)"
+echo "num parallel experts $(EP_PARALLEL_SIZE)"
 
 ## Original GPT-3 model always set min LR at 10% of max LR. For MoE model, we
 ## found that lower LR and min LR (than the base dense model) helps.
@@ -193,10 +207,6 @@ if [ "${CL_ENABLED}" = "true" ]; then
     NAME="${NAME}-cl-${CL_START_SEQLEN}-${CL_STEP}"
 fi
 
-data_path=$1  # path to data which contains binarized data for each directions
-vocab_path=$2 # path to vocab
-output_path=$3 # path to model checkpoints
-logging_path=$4 # path to logging
 
 DATA_PATH="$data_path"
 VOCAB_DIR="$vocab_path"
@@ -333,7 +343,7 @@ megatron_options="${megatron_options} \
         --disable-moe-token-dropping"
 fi
 
-config_json="/home/megatron/Megatron-DeepSpeed/examples/MoE/ds_config_gpt.json"
+config_json="./examples/MoE/ds_config_gpt.json"
 
 deepspeed_options=" \
 		    --deepspeed \
@@ -351,7 +361,7 @@ deepspeed_options="${deepspeed_options} \
         --deepspeed-activation-checkpointing"
 fi
 
-run_cmd="python /home/megatron/Megatron-DeepSpeed/pretrain_gpt.py ${megatron_options} ${data_options} ${deepspeed_options}"
+run_cmd="python -u pretrain_gpt.py ${megatron_options} ${data_options} ${deepspeed_options}"
 echo ${run_cmd}
 eval ${run_cmd}
 set +x
