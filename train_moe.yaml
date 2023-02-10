@@ -2,13 +2,8 @@ $schema: https://componentsdk.azureedge.net/jsonschema/DistributedComponent.json
 description: "FIM GPT Pretraining MoE"
 display_name: FIM-GPT-Pretraining-MoE
 environment:
-  docker:
-    build:
-      dockerfile: file:Dockerfile
-
-
-  # docker: 
-    # image: b5476ead59e14b909c1c0afdc3422078.azurecr.io/megatron-deepspeed-switch-moe-128-1b-bs-4
+  docker: 
+    image: b5476ead59e14b909c1c0afdc3422078.azurecr.io/megatron-deepspeed-moe
   #   image: mcr.microsoft.com/azureml/curated/acpt-pytorch-1.11-py38-cuda11.5-gpu
   # conda:
   #   conda_dependencies:
