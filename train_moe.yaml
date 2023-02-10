@@ -30,10 +30,65 @@ inputs:
     description: Vocab dataset
     optional: false
     type: path
-  num_experts: 
+
+  EP_SIZE: 
     description: Number of experts
-    optional: false
+    optional: true
+    default: 1
     type: int
+  MODEL_SIZE: 
+    description: model size
+    optional: true
+    default:  0.35
+    type: float
+  NUM_LAYERS: 
+    description: num layers
+    optional: true
+    default: 24
+    type: int
+  NUM_ATTN_HEADS: 
+    description: num attn hads
+    optional: true
+    default: 16
+    type: int
+  HIDDEN_SIZE:
+    description: size of hidden layers
+    optional: true
+    default: 1024
+    type: int
+  GLOBAL_BATCH_SIZE:
+    description:  affects training iterations
+    optional: true
+    default: 256
+    type: int
+  LR: 
+    description: learning rate
+    optional: true
+    default: 2.0e-4
+    type: float
+  MIN_LR: 
+    description: learning rate
+    optional: true
+    default: 2e-06
+    type: float
+  BATCH_SIZE:
+    description:  Make sure that BATCH_SIZE <= GLOBAL_BATCH_SIZE*PP_SIZE*MP_SIZE/NUM_GPUS
+    optional: true
+    default: 4
+    type: int
+  NUM_GPUS: 
+    description: number of gpus
+    optional: true
+    default: 64
+    type: int
+  MLC: 
+    description: Coefficient for MoE loss. We find that 0.01 is a good value
+    optional: true
+    default: 0.01
+    type: float
+
+    
+
 is_deterministic: true
 meta: 
   requireGpu: true
@@ -50,20 +105,23 @@ outputs:
 launcher:
   type: torch.distributed
   additional_arguments: >    
-    ls && ./pretrain_gpt_moe.sh {inputs.train_dataset} {inputs.vocab_dataset} {outputs.model_checkpoint} {outputs.logging_path} {inputs.num_experts}
+    ./pretrain_gpt_moe.sh 
+      --data_path {inputs.train_dataset}
+      --vocab_path {inputs.vocab_dataset}
+      --output_path {outputs.model_checkpoint}
+      --logging_path {outputs.logging_path}
+      [--EP_SIZE {inputs.EP_SIZE}]
+      [--MODEL_SIZE {inputs.MODEL_SIZE}]
+      [--NUM_LAYERS {inputs.NUM_LAYERS}]
+      [--HIDDEN_SIZE {inputs.HIDDEN_SIZE}]
+      [--NUM_ATTN_HEADS {inputs.NUM_ATTN_HEADS}]
+      [--GLOBAL_BATCH_SIZE {inputs.GLOBAL_BATCH_SIZE}]
+      [--LR {inputs.LR}]
+      [--MIN_LR {inputs.MIN_LR}]
+      [--BATCH_SIZE {inputs.BATCH_SIZE}]
+      [--NUM_GPUS {inputs.NUM_GPUS}]
+      [--MLC {inputs.MLC}]
 
-
-
-# chmod u+x /home/megatron/Megatron-DeepSpeed/examples/MoE/ds_pretrain_gpt_350M_MoE128.sh &&    /home/megatron/Megatron-DeepSpeed/examples/MoE/ds_pretrain_gpt_350M_MoE128.sh {inputs.train_dataset} {inputs.vocab_dataset} {outputs.model_checkpoint} {outputs.logging_path}
-
-
-
-# chmod u+x ./pretrain_gpt_moe.sh &&    ./pretrain_gpt_moe.sh {inputs.train_dataset} {inputs.vocab_dataset} {outputs.model_checkpoint} {outputs.logging_path} {inputs.num_experts}
-# cd ./megatron/data && make && cd ../../ &&
-    # ./pretrain_gpt_moe.sh {inputs.train_dataset} {inputs.vocab_dataset} {outputs.model_checkpoint} {outputs.logging_path} {inputs.num_experts}
-# ls && ./pretrain_gpt_moe.sh {inputs.train_dataset} {inputs.vocab_dataset} {outputs.model_checkpoint} {outputs.logging_path} {inputs.num_experts}
-# ls && ./examples/MoE/ds_pretrain_gpt_350M_MoE128.sh {inputs.train_dataset} {inputs.vocab_dataset} {outputs.model_checkpoint} {outputs.logging_path}
-#chmod u+x /home/megatron/Megatron-DeepSpeed/examples/MoE/ds_pretrain_gpt_350M_MoE128.sh &&    /home/megatron/Megatron-DeepSpeed/examples/MoE/ds_pretrain_gpt_350M_MoE128.sh {inputs.train_dataset} {inputs.vocab_dataset} {outputs.model_checkpoint} {outputs.logging_path}
 tags: 
   author: misantac@microsoft.com
 type: DistributedComponent

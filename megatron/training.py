@@ -28,6 +28,10 @@ try:
 except ModuleNotFoundError:
     print('Wandb import failed', flush=True)
 
+    
+from azureml.core.run import Run
+azureml_run = Run.get_context()
+
 import torch
 from torch.nn.parallel.distributed import DistributedDataParallel as torchDDP
 
@@ -945,7 +949,7 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
                 writer.add_scalar('optimizer/weight_abs_max', opt_stats_2[3], iteration)
 
     # Weights and biases reporting
-    if (iteration % args.log_interval == 0) and is_last_rank() and args.wandb_project_name:
+    if (iteration % args.log_interval == 0) and is_last_rank():
         metrics = {
             'learning-rate': learning_rate,
             'samples': args.consumed_train_samples,
@@ -953,7 +957,13 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
             'grad-norm': grad_norm,
             **loss_dict
         }
-        wandb.log(metrics, step=iteration)
+        if args.wandb_project_name:
+            wandb.log(metrics, step=iteration)
+        
+        for k, v in metrics.items():
+            if isinstance(v, (int, float)):
+                azureml_run.log(k, v, description=k)
+        azureml_run.log("step", iteration, description="step")
 
     if iteration % args.log_interval == 0:
         elapsed_time = timers('interval-time').elapsed()
@@ -1296,11 +1306,18 @@ def evaluate_and_print_results(prefix, forward_step_func,
                                   ppl, args.consumed_train_tokens)
 
     # Weights and biases reporting
-    if is_last_rank() and args.wandb_project_name:
+    if is_last_rank():
         metrics = {
             '{} validation'.format(key): total_loss_dict[key].item() for key in total_loss_dict
         }
-        wandb.log(metrics, step=iteration)
+        if args.wandb_project_name:
+            wandb.log(metrics, step=iteration)
+            
+        for k, v in metrics.items():
+            if isinstance(v, (int, float)):
+                azureml_run.log(k, v, description=k)
+        azureml_run.log("validation_step", iteration, description="validation_step")
+
 
     length = len(string) + 1
     print_rank_last('-' * length)

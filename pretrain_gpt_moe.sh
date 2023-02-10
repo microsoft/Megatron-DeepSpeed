@@ -1,11 +1,41 @@
 #!/bin/bash
 
 
-data_path=$1  # path to data which contains binarized data for each directions
-vocab_path=$2 # path to vocab
-output_path=$3 # path to model checkpoints
-logging_path=$4 # path to logging
-num_e=$5  # number of experts
+# data_path=$1  # path to data which contains binarized data for each directions
+# vocab_path=$2 # path to vocab
+# output_path=$3 # path to model checkpoints
+# logging_path=$4 # path to logging
+
+while [ $# -gt 0 ]; do
+
+   if [[ $1 == *"--"* ]]; then
+        v="${1/--/}"
+        declare $v="$2"
+        echo "$v = $2"
+   fi
+
+  shift
+done
+
+echo $data_path 
+echo $vocab_path 
+echo $output_path 
+echo $logging_path 
+echo $num_e 
+
+# the script needs these parameters in order to function properly
+# MODEL_SIZE=0.35
+# NUM_LAYERS=24
+# HIDDEN_SIZE=1024
+# NUM_ATTN_HEADS=16
+# GLOBAL_BATCH_SIZE=256
+# LR=2.0e-4
+# MIN_LR=2e-06
+# BATCH_SIZE=4
+# NUM_GPUS=64
+# MLC=0.01
+# EP_SIZE=1
+
 
 
 DIR=`pwd`
@@ -28,11 +58,11 @@ SEQ_LEN=2048
 # MIN_LR=6.0e-5
 
 ## GPT-3 Medium 350M
-MODEL_SIZE=0.35
-NUM_LAYERS=24
-HIDDEN_SIZE=1024
-NUM_ATTN_HEADS=16
-GLOBAL_BATCH_SIZE=256
+# MODEL_SIZE=0.35
+# NUM_LAYERS=24
+# HIDDEN_SIZE=1024
+# NUM_ATTN_HEADS=16
+# GLOBAL_BATCH_SIZE=256
 # LR=3.0e-4
 # MIN_LR=3.0e-5
 
@@ -119,7 +149,7 @@ LR_DECAY_TOKENS=300000000000
 ### Parallelism configs
 ## Micro batch size per GPU
 ## Make sure that BATCH_SIZE <= GLOBAL_BATCH_SIZE*PP_SIZE*MP_SIZE/NUM_GPUS
-BATCH_SIZE=4
+# BATCH_SIZE=4
 
 ## Model parallelism, 1 is no MP
 ## Currently MoE models have divergence issue when MP > 1.
@@ -129,11 +159,11 @@ MP_SIZE=1
 ## Currently we don't support PP for MoE. To disable PP, set PP_SIZE
 ## to 1 and use the "--no-pipeline-parallel" arg.
 PP_SIZE=1
-NUM_GPUS=64
+# NUM_GPUS=64
 ###############################################################################
 ### MoE configs
 ## Number of experts. EP_SIZE 1 means dense model without MoE
-EP_SIZE=1
+# EP_SIZE=1
 # EP_SIZE=128
 
 # EP_SIZE = num_e
@@ -152,8 +182,8 @@ echo "num parallel experts $(EP_PARALLEL_SIZE)"
 ## For 1.3B MoE-128 model we used LR=1.2e-4 and MIN_LR=1.0e-6.
 ## For 350M MoE-128 model we used LR=2.0e-4 and MIN_LR=2.0e-6, but they are not
 ## heavily tuned.
-LR=2.0e-4
-MIN_LR=2e-06
+# LR=2.0e-4
+# MIN_LR=2e-06
 
 ## Coefficient for MoE loss. We find that 0.01 is a good value at least for
 ## 1.3B MoE-128 model
@@ -343,7 +373,28 @@ megatron_options="${megatron_options} \
         --disable-moe-token-dropping"
 fi
 
-config_json="./examples/MoE/ds_config_gpt.json"
+# config_json="./examples/MoE/ds_config_gpt.json"
+# config_json="./examples/MoE/ds_pretrain_gpt_125M_dense_cl.json"
+
+
+# template_json="./examples/MoE/ds_pretrain_gpt_125M_dense_cl.json"
+template_json="./examples/MoE/ds_config_gpt_TEMPLATE.json"
+config_json="ds_config_gpt_${NAME}.json"
+sed "s/CONFIG_BATCH_SIZE/${GLOBAL_BATCH_SIZE}/" ${template_json} \
+    | sed "s/CONFIG_MBSIZE/${BATCH_SIZE}/" \
+    | sed "s/LOG_INTERVAL/${LOG_INTERVAL}/" \
+    | sed "s/ZERO_STAGE/0/" \
+    | sed "s/PRESCALE_GRAD/true/" \
+    | sed "s/CONFIG_FP16_ENABLED/true/" \
+    | sed "s/CONFIG_BF16_ENABLED/false/" \
+    | sed "s/CONFIG_CL_ENABLED/${CL_ENABLED}/" \
+    | sed "s/CONFIG_CL_MIN/${CL_START_SEQLEN}/" \
+    | sed "s/CONFIG_CL_MAX/${SEQ_LEN}/" \
+    | sed "s/CONFIG_CL_DURATION/${CL_STEP}/" \
+      > ${config_json}
+
+echo $config_json
+cat $config_json
 
 deepspeed_options=" \
 		    --deepspeed \

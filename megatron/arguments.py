@@ -948,6 +948,8 @@ def _add_distillation_args(parser):
     group.add_argument('--load-teacher', type=str, default=None,
                        help='Directory containing a teacher model checkpoint.')
 
+    return parser
+
 def _add_upcycle_moe_load_args(parser):
     group = parser.add_argument_group('Sparse MoE Loading',
                                       'Model Loading Configurations')
