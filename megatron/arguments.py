@@ -46,6 +46,7 @@ def parse_args(extra_args_provider=None, defaults={},
     parser = _add_memoryopt_args(parser)
     parser = _add_activation_checkpoint_args(parser)
     parser = _add_distillation_args(parser)
+    parser = _add_upcycle_moe_load_args(parser)
 
     # Custom arguments.
     if extra_args_provider is not None:
@@ -946,5 +947,23 @@ def _add_distillation_args(parser):
     
     group.add_argument('--load-teacher', type=str, default=None,
                        help='Directory containing a teacher model checkpoint.')
+
+def _add_upcycle_moe_load_args(parser):
+    group = parser.add_argument_group('Sparse MoE Loading',
+                                      'Model Loading Configurations')
+    
+    group.add_argument('--num-layers-base', type=int, default=None,
+                       help='Number of the base transformer layers.')
+    # group.add_argument('--num-experts-base', type=int, nargs='+', default=[1,],
+    #                     help='number of base experts list, MoE related.')
+    group.add_argument('--hidden-size-base', type=int, default=None,
+                       help='Tansformer base hidden size.')
+    group.add_argument('--num-attention-base-teacher', type=int, default=None,
+                       help='Number of base transformer attention heads.') 
+
+    
+    group.add_argument('--load-base', type=str, default=None,
+                       help='Directory containing a base model checkpoint to initialize a MoE model with.')
+
 
     return parser

@@ -136,6 +136,13 @@ def pretrain(train_valid_test_dataset_provider,
         if "compression_training" in args.deepspeed_configuration:
             args.compression_training = True
 
+    # print_datetime('loading base model')
+    # timers('base-model-setup').start()
+    # args.base_model = None
+    # if args.load_base:
+    #     args.base_model = setup_base_model(args, model_provider)
+    # timers('base-model-setup').stop()
+
     # Model, optimizer, and learning rate.
     timers('model-and-optimizer-setup').start()
     model, optimizer, lr_scheduler = setup_model_and_optimizer(
@@ -144,6 +151,7 @@ def pretrain(train_valid_test_dataset_provider,
     timers('model-and-optimizer-setup').stop()
     print_datetime('after model, optimizer, and learning rate '
                    'scheduler are built')
+
 
     # Data stuff.
     timers('train/valid/test-data-iterators-setup').start()
@@ -278,6 +286,35 @@ def setup_teacher_model(args, model_provider):
     args.iteration = iteration_stuent
 
     return teacher_model
+
+# def setup_base_model(args, model_provider):        
+    
+#     print_rank_0('***>>>>> Base model checkpoint iteration:{}'.format(args.iteration))
+#     iteration_orig = args.iteration
+#     num_layers_orig = args.num_layers
+#     num_experts_orig = args.num_experts
+#     hidden_size_orig = args.hidden_size
+#     num_attention_heads_orig = args.num_attention_heads
+#     load_orig = args.load
+
+#     print_rank_0('***>>>>> Setting up the base model')
+
+#     args.num_layers = args.num_layers_base
+#     args.num_experts = args.num_experts_base
+#     args.hidden_size = args.hidden_size_base
+#     args.num_attention_heads = args.num_attention_heads_base
+#     args.load = args.load_base
+#     base_model, _, _ = load_model_weights_only(model_provider)
+#     print_rank_0('***>>>>> Base model:{}'.format(base_model))
+
+#     args.num_layers = num_layers_orig
+#     args.num_experts = num_experts_orig
+#     args.hidden_size = hidden_size_orig
+#     args.num_attention_heads = num_attention_heads_orig
+#     args.load = load_orig
+#     args.iteration = iteration_orig
+
+#     return base_model
 
 def get_model(model_provider_func):
     """Build the model."""
@@ -435,7 +472,7 @@ def load_model_weights_only(model_provider_func):
     return model, optimizer, lr_scheduler
 
 def setup_model_and_optimizer(model_provider_func, teacher=False,
-    data_post_process=None, build_train_valid_test_datasets_provider=None):
+    data_post_process=None, build_train_valid_test_datasets_provider=None, base_model=None):
     """Setup model and optimizer."""
     args = get_args()
 
@@ -450,6 +487,11 @@ def setup_model_and_optimizer(model_provider_func, teacher=False,
                 mpu=mpu if args.no_pipeline_parallel else None
             )
         model = [model]
+
+        if args.load_base is not None:
+            assert args.load is None, "Can only load from one of args.load or args.load_base"
+
+            args.iteration = load_checkpoint(model, None, None, load_arg="load_base", strict=False)
         if args.load is not None:
             args.iteration = load_checkpoint(model, None, None, strict=False)
         else:
