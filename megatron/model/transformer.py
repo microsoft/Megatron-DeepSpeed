@@ -70,7 +70,7 @@ class ParallelMLP(MegatronModule):
             args.ffn_hidden_size,
             gather_output=False,
             init_method=init_method,
-            skip_bias_add=True,
+            skip_bias_add=args.bias_gelu_fusion,
             moe=moe,
             enable_expert_tensor_parallelism=enable_expert_tensor_parallelism
             )
@@ -101,8 +101,9 @@ class ParallelMLP(MegatronModule):
              intermediate_parallel = \
                      bias_gelu_impl(intermediate_parallel, bias_parallel)
         else:
+            assert bias_parallel is None
             intermediate_parallel = \
-                self.activation_func(intermediate_parallel + bias_parallel)
+                self.activation_func(intermediate_parallel)
 
         # [s, b, h]
         output, output_bias = self.dense_4h_to_h(intermediate_parallel)
