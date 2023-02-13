@@ -86,8 +86,37 @@ inputs:
     optional: true
     default: 0.01
     type: float
+  EXIT_DURATION:
+    description:  Exit cooldown for lr
+    optional: true
+    default: 30000000
+    type: int
+  TRAIN_TOKENS:
+    description:  Total train tokens
+    optional: true
+    default: 300000000000
+    type: int
+  WARMUP_TOKENS:
+    description:  LR warmup
+    optional: true
+    default: 375000000
+    type: int
+  LR_DECAY_TOKENS:
+    description:  LR decay
+    optional: true
+    default: 300000000000
+    type: int
+  EVAL_INTERVAL:
+    description:  interval between evaluating
+    optional: true
+    default: 100
+    type: int
+  SAVE_INTERVAL:
+    description:  interval between saving
+    optional: true
+    default: 10000
+    type: int
 
-    
 
 is_deterministic: true
 meta: 
@@ -121,6 +150,12 @@ launcher:
       [--BATCH_SIZE {inputs.BATCH_SIZE}]
       [--NUM_GPUS {inputs.NUM_GPUS}]
       [--MLC {inputs.MLC}]
+      [--EXIT_DURATION {inputs.EXIT_DURATION}]
+      [--TRAIN_TOKENS {inputs.TRAIN_TOKENS}]
+      [--WARMUP_TOKENS {inputs.WARMUP_TOKENS}]
+      [--LR_DECAY_TOKENS {inputs.LR_DECAY_TOKENS}]
+      [--EVAL_INTERVAL {inputs.EVAL_INTERVAL}]
+      [--SAVE_INTERVAL {inputs.SAVE_INTERVAL}]
 
 tags: 
   author: misantac@microsoft.com

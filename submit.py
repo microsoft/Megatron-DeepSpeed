@@ -91,6 +91,12 @@ def main():
 
             # load_path = Dataset.get_by_name(ws, "test_checkpoint_load"),
 
+            NUM_LAYERS=2,
+            HIDDEN_SIZE=512,
+            NUM_ATTN_HEADS=4,
+
+            NUM_GPUS=8,
+
 
         )
         # trainer.runsettings.resource_layout.configure(instance_count=2, process_count_per_node=8)

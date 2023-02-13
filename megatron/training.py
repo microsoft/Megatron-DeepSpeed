@@ -23,14 +23,13 @@ import json
 # The earliest we can measure the start time.
 _TRAIN_START_TIME = time.time()
 
-try:
-    import wandb
-except ModuleNotFoundError:
-    print('Wandb import failed', flush=True)
+# try:
+#     import wandb
+# except ModuleNotFoundError:
+#     print('Wandb import failed', flush=True)
 
     
 from azureml.core.run import Run
-azureml_run = Run.get_context()
 
 import torch
 from torch.nn.parallel.distributed import DistributedDataParallel as torchDDP
@@ -124,6 +123,8 @@ def pretrain(train_valid_test_dataset_provider,
 
     args = get_args()
     timers = get_timers()
+    
+    azureml_run = Run.get_context()
 
     if args.deepspeed:
         args.deepspeed_configuration = json.load(
@@ -203,14 +204,14 @@ def pretrain(train_valid_test_dataset_provider,
     if args.do_train and args.train_iters > 0:
         iteration = train(forward_step_func,
                           model, optimizer, lr_scheduler,
-                          train_data_iterator, valid_data_iterator)
+                          train_data_iterator, valid_data_iterator, azureml_run=azureml_run)
     print_datetime('after training is done')
 
     if args.do_valid:
         prefix = 'the end of training for val data'
         evaluate_and_print_results(prefix, forward_step_func,
                                    valid_data_iterator, model,
-                                   iteration, False)
+                                   iteration, False, azureml_run=azureml_run)
     
     # Clean the model and do evaluation again
     if args.compression_training:
@@ -219,7 +220,7 @@ def pretrain(train_valid_test_dataset_provider,
             prefix = 'the end of training and after model cleaning for val data'
             evaluate_and_print_results(prefix, forward_step_func,
                                     valid_data_iterator, model,
-                                    iteration, False)
+                                    iteration, False, azureml_run=azureml_run)
 
 
     if args.save and iteration != 0:
@@ -230,7 +231,7 @@ def pretrain(train_valid_test_dataset_provider,
         prefix = 'the end of training for test data'
         evaluate_and_print_results(prefix, forward_step_func,
                                    test_data_iterator, model,
-                                   0, True, test=True)
+                                   0, True, test=True, azureml_run=azureml_run)
 
 def update_train_iters(args):
 
@@ -739,7 +740,7 @@ def train_step(forward_step_func, data_iterator,
 def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
                  loss_scale, report_memory_flag, skipped_iter,
                  grad_norm, params_norm, num_zeros_in_grad,
-                 model=None, optimizer=None):
+                 model=None, optimizer=None, azureml_run=None):
     """Log training information such as losses, timing, ...."""
     args = get_args()
     timers = get_timers()
@@ -955,14 +956,24 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
             'samples': args.consumed_train_samples,
             'loss-scale': loss_scale,
             'grad-norm': grad_norm,
-            **loss_dict
+            **loss_dict,
         }
-        if args.wandb_project_name:
-            wandb.log(metrics, step=iteration)
+        # for k, v in loss_dict.items():
+        #     print_rank_0("loss printing " + k + " " + str(v))
+            # metrics[k] = float(v)
+        # if args.wandb_project_name:
+        #     wandb.log(metrics, step=iteration)
         
         for k, v in metrics.items():
             if isinstance(v, (int, float)):
                 azureml_run.log(k, v, description=k)
+            else:
+                try:
+                    azureml_run.log(k, float(v), description=k)
+                except:
+                    azureml_run.log(k, 0, description=k)
+                    print_rank_0("manual log " + k)
+                    continue
         azureml_run.log("step", iteration, description="step")
 
     if iteration % args.log_interval == 0:
@@ -1055,16 +1066,16 @@ def save_checkpoint_and_time(iteration, model, optimizer, lr_scheduler):
 
 
 def train(forward_step_func, model, optimizer, lr_scheduler,
-          train_data_iterator, valid_data_iterator):
+          train_data_iterator, valid_data_iterator, azureml_run=None):
     """Train the model function."""
     args = get_args()
     timers = get_timers()
-
+    
     # Write args to tensorboard
     write_args_to_tensorboard()
 
     # Init Weights and Biases
-    init_wandb()
+    # init_wandb()
 
     if args.random_ltd:
         # random-ltd requires different randomness on each rank
@@ -1148,7 +1159,7 @@ def train(forward_step_func, model, optimizer, lr_scheduler,
                                           iteration, loss_scale,
                                           report_memory_flag, skipped_iter,
                                           grad_norm, params_norm, num_zeros_in_grad,
-                                          model, optimizer)
+                                          model, optimizer, azureml_run=azureml_run)
 
         # Autoresume
         if args.adlr_autoresume and \
@@ -1162,7 +1173,7 @@ def train(forward_step_func, model, optimizer, lr_scheduler,
             prefix = 'iteration {}'.format(iteration)
             evaluate_and_print_results(prefix, forward_step_func,
                                        valid_data_iterator, model,
-                                       iteration, False)
+                                       iteration, False, azureml_run=azureml_run)
 
         # Checkpointing
         saved_checkpoint = False
@@ -1275,7 +1286,7 @@ def evaluate(forward_step_func, data_iterator, model, verbose=False):
 
 def evaluate_and_print_results(prefix, forward_step_func,
                                data_iterator, model,
-                               iteration, verbose=False, test=False):
+                               iteration, verbose=False, test=False, azureml_run=None):
     """Helper function to evaluate and dump results on screen."""
     args = get_args()
     writer = get_tensorboard_writer()
@@ -1307,16 +1318,17 @@ def evaluate_and_print_results(prefix, forward_step_func,
 
     # Weights and biases reporting
     if is_last_rank():
+        data_type = 'test' if test else 'validation'
         metrics = {
-            '{} validation'.format(key): total_loss_dict[key].item() for key in total_loss_dict
+            data_type + '_{}'.format(key): total_loss_dict[key].item() for key in total_loss_dict
         }
-        if args.wandb_project_name:
-            wandb.log(metrics, step=iteration)
+        # if args.wandb_project_name:
+        #     wandb.log(metrics, step=iteration)
             
         for k, v in metrics.items():
-            if isinstance(v, (int, float)):
-                azureml_run.log(k, v, description=k)
-        azureml_run.log("validation_step", iteration, description="validation_step")
+            # if isinstance(v, (int, float)):
+            azureml_run.log(k, v, description=k)
+        azureml_run.log(data_type + "_step", iteration, description="step")
 
 
     length = len(string) + 1

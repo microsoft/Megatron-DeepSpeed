@@ -17,12 +17,6 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-echo $data_path 
-echo $vocab_path 
-echo $output_path 
-echo $logging_path 
-echo $num_e 
-
 # the script needs these parameters in order to function properly
 # MODEL_SIZE=0.35
 # NUM_LAYERS=24
@@ -35,6 +29,14 @@ echo $num_e
 # NUM_GPUS=64
 # MLC=0.01
 # EP_SIZE=1
+
+# EXIT_DURATION=30000000
+# TRAIN_TOKENS=300000000000
+# WARMUP_TOKENS=375000000
+# LR_DECAY_TOKENS=260000000000
+
+# EVAL_INTERVAL=100
+# SAVE_INTERVAL=10000
 
 
 
@@ -123,7 +125,7 @@ SEQ_LEN=2048
 ### Training duration configs
 ## The main termination condition, original GPT-3 paper trains for 300B tokens
 ## For MoE model, we found sometimes training a bit more to 330B tokens helps
-TRAIN_TOKENS=300000000000
+# TRAIN_TOKENS=300000000000
 # TRAIN_TOKENS=330000000000
 
 ## TRAIN_ITERS is another termination condition and also affect the number of 
@@ -135,16 +137,16 @@ TRAIN_ITERS=$(( ${TRAIN_TOKENS} * 3 / ${GLOBAL_BATCH_SIZE} / ${SEQ_LEN} ))
 
 ## Another termination condition in minutes. Set it large enough to avoid
 ## undesired early termination.
-EXIT_DURATION=30000000
+# EXIT_DURATION=30000000
 ###############################################################################
 ### LR configs
 ## LR warmup and decay duration, this token-based config is preferable since
 ## no need to readjust when the batch size/seqlen is changed.
 ## Original GPT-3 paper uses 375M warmup tokens and 260B decay tokens.
 ## For MoE model, we found that setting the decay token to 300B helps.
-WARMUP_TOKENS=375000000
+# WARMUP_TOKENS=375000000
 # LR_DECAY_TOKENS=260000000000
-LR_DECAY_TOKENS=300000000000
+# LR_DECAY_TOKENS=300000000000
 ###############################################################################
 ### Parallelism configs
 ## Micro batch size per GPU
@@ -213,8 +215,8 @@ CL_STEP=$(( ${CL_TOKENS} / (${GLOBAL_BATCH_SIZE} * ${CL_AVG_SEQLEN}) ))
 ### Misc configs
 LOG_INTERVAL=10
 EVAL_ITERS=10
-EVAL_INTERVAL=100
-SAVE_INTERVAL=10000
+# EVAL_INTERVAL=100
+# SAVE_INTERVAL=10000
 
 ## Standard deviation for weight initialization
 ## We used 0.014 for 350M/1.3B dense/MoE models, and used 0.01 for 6.7B
@@ -353,10 +355,10 @@ megatron_options=" \
         --log-batch-size-to-tensorboard \
         --log-validation-ppl-to-tensorboard \
         --artifact-dir ${TENSORBOARD_DIR} \
-        --wandb-entity-name chuyentoankhtn \
-        --wandb-project-name fim_moe_pretraining \
   	    --fim-rate 0.9 \
         --tokenizer-type GPT2BPETokenizerWithFIM"
+        # --wandb-entity-name chuyentoankhtn \
+        # --wandb-project-name fim_moe_pretraining \
 
 if [ "${ACTIVATION_CHECKPOINT}" = "true" ]; then
 megatron_options="${megatron_options} \
