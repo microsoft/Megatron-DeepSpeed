@@ -268,10 +268,12 @@ def fix_query_key_value_ordering(model, checkpoint_version):
 
 
 def load_base_model_to_moe(src, dst, strict=False):
+    print_rank_0("inside load base model")
     if not isinstance(dst, MoE):
         dst.load_state_dict(src,
                 strict=strict)  # strict actually doesn't get passed in deepspeed source https://github.com/microsoft/DeepSpeed/blob/master/deepspeed/runtime/engine.py
         
+        print_rank_0("non moe load")
     
     else:
         # custom moe load from dense logic
@@ -281,9 +283,14 @@ def load_base_model_to_moe(src, dst, strict=False):
         # https://github.com/microsoft/DeepSpeed/blob/master/deepspeed/moe/experts.py
         # https://github.com/microsoft/DeepSpeed/blob/master/deepspeed/moe/sharded_moe.py
 
+        print_rank_0("LOADING MOE LAYER")
+        print_rank_0("num experts: ")
+        print_rank_0(str(len(dst.deepspeed_moe.experts.deepspeed_experts)))
+
         for expert in dst.deepspeed_moe.experts.deepspeed_experts:
             expert.load_state_dict(src,
                 strict=strict)
+            print_rank_0("loaded expert")
 
 def load_checkpoint(model, optimizer, lr_scheduler, load_arg='load', strict=True, load_only_weights=False):
     """Load a model checkpoint and return the iteration.
@@ -299,7 +306,7 @@ def load_checkpoint(model, optimizer, lr_scheduler, load_arg='load', strict=True
         custom_load_fn = load_base_model_to_moe
 
     if args.deepspeed:
-        if args.finetune:
+        if args.finetune or load_arg == "load_base":
             loaded_dir, state_dict = model[0].load_checkpoint(load_dir,
                 load_module_strict=strict, load_optimizer_states=False,
                 load_lr_scheduler_states=False, load_module_only=True,
@@ -318,7 +325,7 @@ def load_checkpoint(model, optimizer, lr_scheduler, load_arg='load', strict=True
     else:
         if load_arg == "load_base":
             assert False, "Base loading not implemented for non-deepspeed models"
-            
+
         model = utils.unwrap_model(model)
 
         # Read the tracker file and set the iteration.

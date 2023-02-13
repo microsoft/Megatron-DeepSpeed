@@ -88,8 +88,11 @@ def main():
 
             vocab_dataset=vocab_dataset,
 
+            
 
-            # load_path = Dataset.get_by_name(ws, "test_checkpoint_load"),
+
+            LOAD_BASE_PATH = Dataset.get_by_name(ws, "dummy_megatron_checkpoint"),
+            EP_SIZE=8,
 
             NUM_LAYERS=2,
             HIDDEN_SIZE=512,
@@ -97,6 +100,12 @@ def main():
 
             NUM_GPUS=8,
 
+            TRAIN_TOKENS=2500000,
+            WARMUP_TOKENS=10,
+            LR_DECAY_TOKENS=10,
+            EVAL_INTERVAL=50,
+            SAVE_INTERVAL=50,
+            GLOBAL_BATCH_SIZE=32,
 
         )
         # trainer.runsettings.resource_layout.configure(instance_count=2, process_count_per_node=8)

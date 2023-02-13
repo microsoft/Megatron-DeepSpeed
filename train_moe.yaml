@@ -116,6 +116,16 @@ inputs:
     optional: true
     default: 10000
     type: int
+  LOAD_PATH:
+    description:  load model path
+    optional: true
+    default: ""
+    type: path
+  LOAD_BASE_PATH:
+    description:  load dense checkpoint into moe path
+    optional: true
+    default: ""
+    type: path
 
 
 is_deterministic: true
@@ -156,6 +166,9 @@ launcher:
       [--LR_DECAY_TOKENS {inputs.LR_DECAY_TOKENS}]
       [--EVAL_INTERVAL {inputs.EVAL_INTERVAL}]
       [--SAVE_INTERVAL {inputs.SAVE_INTERVAL}]
+      [--LOAD_PATH {inputs.LOAD_PATH}]
+      [--LOAD_BASE_PATH {inputs.LOAD_BASE_PATH}]
+
 
 tags: 
   author: misantac@microsoft.com

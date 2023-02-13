@@ -585,6 +585,16 @@ def setup_model_and_optimizer(model_provider_func, teacher=False,
     # Compression has its own checkpoint loading path (e.g, loading both teacher and student models). So if compression is enabled, we skip the following checkpoint loading.
     no_post_init_checkpoint_loading = args.kd or args.mos
     if not no_post_init_checkpoint_loading:
+        if args.load_base is not None:
+            assert args.load is None, "Can only load from one of args.load or args.load_base"
+
+            timers = get_timers()
+            torch.distributed.barrier()
+            timers('load-checkpoint').start()
+            args.iteration = load_checkpoint(model, optimizer, lr_scheduler, load_arg="load_base", strict=False)
+            torch.distributed.barrier()
+            timers('load-checkpoint').stop()
+            timers.log(['load-checkpoint'])
         if args.load is not None:
             timers = get_timers()
             # Extra barrier is added to make sure all ranks report the

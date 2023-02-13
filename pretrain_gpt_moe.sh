@@ -29,6 +29,8 @@ done
 # NUM_GPUS=64
 # MLC=0.01
 # EP_SIZE=1
+# LOAD_BASE_PATH
+# LOAD_PATH
 
 # EXIT_DURATION=30000000
 # TRAIN_TOKENS=300000000000
@@ -176,8 +178,8 @@ else
     EP_PARALLEL_SIZE=$EP_SIZE
 fi
 
-echo "num experts $(EP_SIZE)"
-echo "num parallel experts $(EP_PARALLEL_SIZE)"
+echo "num experts $EP_SIZE"
+echo "num parallel experts $EP_PARALLEL_SIZE"
 
 ## Original GPT-3 model always set min LR at 10% of max LR. For MoE model, we
 ## found that lower LR and min LR (than the base dense model) helps.
@@ -348,7 +350,7 @@ megatron_options=" \
         --hysteresis 2 \
         --num-workers 0 \
         --fp16 \
-        --load ${CHECKPOINT_PATH} \
+        --load-base ${LOAD_BASE_PATH} \
         --save ${CHECKPOINT_PATH} \
         --tensorboard-queue-size 1 \
         --log-timers-to-tensorboard \
@@ -357,6 +359,7 @@ megatron_options=" \
         --artifact-dir ${TENSORBOARD_DIR} \
   	    --fim-rate 0.9 \
         --tokenizer-type GPT2BPETokenizerWithFIM"
+        # --load ${LOAD_PATH} \
         # --wandb-entity-name chuyentoankhtn \
         # --wandb-project-name fim_moe_pretraining \
 
