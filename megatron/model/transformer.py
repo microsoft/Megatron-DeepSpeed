@@ -785,9 +785,8 @@ class ParallelTransformer(MegatronModule):
                                       enc_dec_attn_mask=enc_dec_attn_mask,
                                       layer_past=past,
                                       get_key_value=get_key_value)
-                if not self.ds_inference:
-                    hidden_states, moe_loss = hidden_states
-                    moe_losses.append(moe_loss)
+                hidden_states, moe_loss = hidden_states
+                moe_losses.append(moe_loss)
                 if get_key_value:
                     hidden_states, present = hidden_states
                     presents.append(present)
