@@ -146,7 +146,13 @@ def pretrain(train_valid_test_dataset_provider,
     # args.base_model = None
     # if args.load_base:
     #     args.base_model = setup_base_model(args, model_provider)
+    #     print(args.base_model)
+    #     for n, m in args.base_model.named_modules():
+    #         print(n)
+    #         print(m)
+    #     0/0
     # timers('base-model-setup').stop()
+
 
     # Model, optimizer, and learning rate.
     timers('model-and-optimizer-setup').start()
@@ -292,34 +298,35 @@ def setup_teacher_model(args, model_provider):
 
     return teacher_model
 
-# def setup_base_model(args, model_provider):        
+def setup_base_model(args, model_provider):        
     
-#     print_rank_0('***>>>>> Base model checkpoint iteration:{}'.format(args.iteration))
-#     iteration_orig = args.iteration
-#     num_layers_orig = args.num_layers
-#     num_experts_orig = args.num_experts
-#     hidden_size_orig = args.hidden_size
-#     num_attention_heads_orig = args.num_attention_heads
-#     load_orig = args.load
+    # print_rank_0('***>>>>> Base model checkpoint iteration:{}'.format(args.iteration))
+    print_rank_0('***>>>>> Setting up the base model')
+    # iteration_orig = args.iteration
+    num_layers_orig = args.num_layers
+    num_experts_orig = args.num_experts
+    hidden_size_orig = args.hidden_size
+    num_attention_heads_orig = args.num_attention_heads
+    load_orig = args.load
 
-#     print_rank_0('***>>>>> Setting up the base model')
 
-#     args.num_layers = args.num_layers_base
-#     args.num_experts = args.num_experts_base
-#     args.hidden_size = args.hidden_size_base
-#     args.num_attention_heads = args.num_attention_heads_base
-#     args.load = args.load_base
-#     base_model, _, _ = load_model_weights_only(model_provider)
-#     print_rank_0('***>>>>> Base model:{}'.format(base_model))
+    args.num_layers = args.num_layers_base
+    # args.num_experts = args.num_experts_base
+    args.num_experts = [1]
+    args.hidden_size = args.hidden_size_base
+    args.num_attention_heads = args.num_attention_heads_base
+    args.load = args.load_base
+    base_model, _, _ = load_model_weights_only(model_provider)
+    print_rank_0('***>>>>> Base model:{}'.format(base_model))
 
-#     args.num_layers = num_layers_orig
-#     args.num_experts = num_experts_orig
-#     args.hidden_size = hidden_size_orig
-#     args.num_attention_heads = num_attention_heads_orig
-#     args.load = load_orig
-#     args.iteration = iteration_orig
+    args.num_layers = num_layers_orig
+    args.num_experts = num_experts_orig
+    args.hidden_size = hidden_size_orig
+    args.num_attention_heads = num_attention_heads_orig
+    args.load = load_orig
+    # args.iteration = iteration_orig
 
-#     return base_model
+    return base_model
 
 def get_model(model_provider_func):
     """Build the model."""

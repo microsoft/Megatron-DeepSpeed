@@ -40,6 +40,8 @@ done
 # EVAL_INTERVAL=100
 # SAVE_INTERVAL=10000
 
+# load_base_version
+
 
 
 DIR=`pwd`
@@ -350,7 +352,6 @@ megatron_options=" \
         --hysteresis 2 \
         --num-workers 0 \
         --fp16 \
-        --load-base ${LOAD_BASE_PATH} \
         --save ${CHECKPOINT_PATH} \
         --tensorboard-queue-size 1 \
         --log-timers-to-tensorboard \
@@ -358,8 +359,24 @@ megatron_options=" \
         --log-validation-ppl-to-tensorboard \
         --artifact-dir ${TENSORBOARD_DIR} \
   	    --fim-rate 0.9 \
+        
+        --load-base-version ${load_base_version} \
         --tokenizer-type GPT2BPETokenizerWithFIM"
-        # --load ${LOAD_PATH} \
+        
+
+if [${#LOAD_BASE_PATH}  -gt 0]; then
+echo "adding load base path arg"
+megatron_options="${megatron_options} \
+        --load-base ${LOAD_BASE_PATH}"
+fi
+
+if [${#LOAD_PATH}  -gt 10]; then
+echo "adding load path arg"
+megatron_options="${megatron_options} \
+        --load ${LOAD_PATH}"
+fi
+
+
         # --wandb-entity-name chuyentoankhtn \
         # --wandb-project-name fim_moe_pretraining \
 
@@ -404,13 +421,14 @@ cat $config_json
 deepspeed_options=" \
 		    --deepspeed \
 		    --deepspeed_config ${config_json} \
-		    --pipeline-model-parallel-size ${PP_SIZE}"
+		    --pipeline-model-parallel-size ${PP_SIZE} \
+            --no-pipeline-parallel"
 
 # Currently MoE is not compatible with pipeline parallel
-if [[ $EP_SIZE -gt 1 ]]; then
-deepspeed_options="${deepspeed_options} \
-        --no-pipeline-parallel"
-fi
+# if [[ $EP_SIZE -gt 1 ]]; then
+# deepspeed_options="${deepspeed_options} \
+#         --no-pipeline-parallel"
+# fi
 
 if [ "${ACTIVATION_CHECKPOINT}" = "true" ]; then
 deepspeed_options="${deepspeed_options} \

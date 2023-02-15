@@ -91,8 +91,13 @@ def main():
             
 
 
-            LOAD_BASE_PATH = Dataset.get_by_name(ws, "dummy_megatron_checkpoint"),
+            # LOAD_PATH = Dataset.get_by_name(ws, "dummy_megatron_checkpoint"),
+
+            # LOAD_BASE_PATH = Dataset.get_by_name(ws, "dummy_megatron_checkpoint"),
+            LOAD_BASE_PATH = Dataset.get_by_name(ws, "dummy_megatron_checkpoint_v2"),
+
             EP_SIZE=8,
+
 
             NUM_LAYERS=2,
             HIDDEN_SIZE=512,

@@ -29,8 +29,6 @@ from megatron import (get_args,
                       update_num_microbatches,
                       utils)
 
-from deepspeed.moe.layer import MoE
-
 _CHECKPOINT_VERSION = None
 
 def set_checkpoint_version(value):
@@ -266,32 +264,6 @@ def fix_query_key_value_ordering(model, checkpoint_version):
         print_rank_0(" succesfully fixed query-key-values ordering for"
                     " checkpoint version {}".format(checkpoint_version))
 
-
-def load_base_model_to_moe(src, dst, strict=False):
-    print_rank_0("inside load base model")
-    if not isinstance(dst, MoE):
-        dst.load_state_dict(src,
-                strict=strict)  # strict actually doesn't get passed in deepspeed source https://github.com/microsoft/DeepSpeed/blob/master/deepspeed/runtime/engine.py
-        
-        print_rank_0("non moe load")
-    
-    else:
-        # custom moe load from dense logic
-        args = get_args() # add more custom init loading right here via args
-        
-        # https://github.com/microsoft/DeepSpeed/blob/master/deepspeed/moe/layer.py
-        # https://github.com/microsoft/DeepSpeed/blob/master/deepspeed/moe/experts.py
-        # https://github.com/microsoft/DeepSpeed/blob/master/deepspeed/moe/sharded_moe.py
-
-        print_rank_0("LOADING MOE LAYER")
-        print_rank_0("num experts: ")
-        print_rank_0(str(len(dst.deepspeed_moe.experts.deepspeed_experts)))
-
-        for expert in dst.deepspeed_moe.experts.deepspeed_experts:
-            expert.load_state_dict(src,
-                strict=strict)
-            print_rank_0("loaded expert")
-
 def load_checkpoint(model, optimizer, lr_scheduler, load_arg='load', strict=True, load_only_weights=False):
     """Load a model checkpoint and return the iteration.
     strict (bool): whether to strictly enforce that the keys in
@@ -301,20 +273,26 @@ def load_checkpoint(model, optimizer, lr_scheduler, load_arg='load', strict=True
     args = get_args()
     load_dir = getattr(args, load_arg)
 
-    custom_load_fn = None
-    if load_arg == "load_base":
-        custom_load_fn = load_base_model_to_moe
-
     if args.deepspeed:
-        if args.finetune or load_arg == "load_base":
+        if args.finetune:
             loaded_dir, state_dict = model[0].load_checkpoint(load_dir,
                 load_module_strict=strict, load_optimizer_states=False,
-                load_lr_scheduler_states=False, load_module_only=True,
-                custom_load_fn=custom_load_fn)
+                load_lr_scheduler_states=False, load_module_only=True)
+        elif load_arg == "load_base":
+            print_rank_0("loading MoE from base model...")
+            has_moe_layers = model[0].has_moe_layers
+            model[0].has_moe_layers = False
+            loaded_dir, state_dict = model[0].load_checkpoint(load_dir,
+                load_module_strict=strict, 
+                load_optimizer_states=False,
+                load_lr_scheduler_states=False, 
+                load_module_only=True,
+                )
+            model[0].has_moe_layers = has_moe_layers
+            
         else:
             loaded_dir, state_dict = model[0].load_checkpoint(load_dir,
-                load_module_strict=strict,
-                custom_load_fn=custom_load_fn)
+                load_module_strict=strict)
         if loaded_dir is None:
             print_rank_0('WARNING: could not find the metadata file {} '.format(
                 load_dir))

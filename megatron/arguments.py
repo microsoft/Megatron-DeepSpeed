@@ -954,18 +954,21 @@ def _add_upcycle_moe_load_args(parser):
     group = parser.add_argument_group('Sparse MoE Loading',
                                       'Model Loading Configurations')
     
-    group.add_argument('--num-layers-base', type=int, default=None,
-                       help='Number of the base transformer layers.')
     # group.add_argument('--num-experts-base', type=int, nargs='+', default=[1,],
     #                     help='number of base experts list, MoE related.')
-    group.add_argument('--hidden-size-base', type=int, default=None,
-                       help='Tansformer base hidden size.')
-    group.add_argument('--num-attention-base-teacher', type=int, default=None,
-                       help='Number of base transformer attention heads.') 
+    # group.add_argument('--num-layers-base', type=int, default=None,
+    #                    help='Number of the base transformer layers.')
+    # group.add_argument('--hidden-size-base', type=int, default=None,
+    #                    help='Tansformer base hidden size.')
+    # group.add_argument('--num-attention-heads-base', type=int, default=None,
+    #                    help='Number of base transformer attention heads.') 
 
     
     group.add_argument('--load-base', type=str, default=None,
                        help='Directory containing a base model checkpoint to initialize a MoE model with.')
+    
+    group.add_argument('--load-base-version', type=str, default="v1",
+                       help='Which version of load-base to use.')
 
 
     return parser

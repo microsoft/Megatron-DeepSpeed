@@ -126,6 +126,13 @@ inputs:
     optional: true
     default: ""
     type: path
+  load_base_version:
+    description: load-base version
+    optional: true
+    default: "v1"
+    type: string
+
+
 
 
 is_deterministic: true
@@ -168,6 +175,7 @@ launcher:
       [--SAVE_INTERVAL {inputs.SAVE_INTERVAL}]
       [--LOAD_PATH {inputs.LOAD_PATH}]
       [--LOAD_BASE_PATH {inputs.LOAD_BASE_PATH}]
+      [--load_base_version {inputs.load_base_version}]
 
 
 tags: 

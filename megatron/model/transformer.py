@@ -804,3 +804,81 @@ class ParallelTransformer(MegatronModule):
             output = [output, presents]
 
         return (output, *moe_losses)
+
+
+    def load_state_dict(self, state_dict, strict=True):
+        args = get_args()
+
+
+        print("Loading with strict=False for base model")
+        missing_keys, unexpected_keys = super(ParallelTransformer, self).load_state_dict(state_dict=state_dict, strict=False)
+
+        if len(unexpected_keys) == 0:
+            print("No unexpected keys, returning")
+            return
+        elif args.load_base:
+            print("Trying to load MoE from dense model...")
+            
+            # example mlp state dict names
+            # layers.0.mlp.dense_h_to_4h.weight
+            # layers.0.mlp.dense_h_to_4h.bias
+            # layers.0.mlp.dense_4h_to_h.weight
+            # layers.0.mlp.dense_4h_to_h.bias
+
+
+            mlp_layers = {}
+            for k in unexpected_keys:
+                if not ("mlp" in k): continue
+
+                layer = k.split(".")[1]
+
+                if not (layer in mlp_layers.keys()):
+                    mlp_layers[layer] = {}
+
+                mlp_layers[layer][k] = state_dict[k]
+            
+            print("found mlp layers")
+            print(mlp_layers.keys())
+
+            print("using load base version")
+            print(args.load_base_version)
+
+            version = args.load_base_version
+
+            # example mod layer names
+            # layers.1.mlp.deepspeed_moe.experts.deepspeed_experts.0.dense_h_to_4h
+            # layers.1.mlp.deepspeed_moe.experts.deepspeed_experts.0.dense_4h_to_h
+            for k, mod in self.named_modules():
+                if not isinstance(mod, MoE): continue
+
+                layer = k.split(".")[1]
+
+                print("loading layer", k, "from mlp layer", layer)
+                print("keys in mlp layer", mlp_layers[layer].keys())
+
+                new_state_dict = {}
+                for n in range(len(mod.deepspeed_moe.experts.deepspeed_experts)):
+                    for mlp_weight_key, mlp_weight in mlp_layers[layer].items():
+
+                        split = mlp_weight_key.split(".")
+
+                        # https://github.com/microsoft/DeepSpeed/blob/master/deepspeed/moe/layer.py
+                        # https://github.com/microsoft/DeepSpeed/blob/master/deepspeed/moe/experts.py
+                        # https://github.com/microsoft/DeepSpeed/blob/master/deepspeed/moe/sharded_moe.py
+
+                        # new_key = f"{split[0]}.{split[1]}.mlp.deepspeed_moe.experts.deepspeed_experts.{n}.dense_h_to_4h.{split[-1]}"
+                        new_key = f"deepspeed_moe.experts.deepspeed_experts.{n}.{split[-2]}.{split[-1]}"
+                        print("old key", mlp_weight_key, "new key", new_key)
+                        new_state_dict[new_key] = mlp_weight
+
+                if version == "v1":
+                    missing_keys, unexpected_keys = mod.load_state_dict(new_state_dict, strict=False)
+                    print("moe mod missing keys")
+                    print(missing_keys)
+                    print("moe mod unexpected_keys")
+                    print(unexpected_keys)
+                    print()
+                else:
+                    print("unknown version", version)
+                    0/0
+
