@@ -12,18 +12,18 @@ from azure.ml.component import (
 from azureml.core import Workspace, Dataset, Datastore
 from azureml.data import OutputFileDatasetConfig
 import itertools
-
+from azureml.core.authentication import InteractiveLoginAuthentication
 
 
 def main():
-    subscription_id = '9ec1d932-0f3f-486c-acc6-e7d78b358f9b'
-    resource_group = 'CopilotEyesOff'
-    workspace_name = 'copilotEyesOffWestUS3'
-    default_compute_target = "A100-40G-non-ipp"
-    ws = Workspace(subscription_id, resource_group, workspace_name)
-    ds = Datastore.get(ws, "blob_data_babela100")
-    train_dataset = Dataset.get_by_name(ws, "megatron_github_300B")
-    vocab_dataset = Dataset.get_by_name(ws, "megatron-lm-vocab")
+    # subscription_id = '9ec1d932-0f3f-486c-acc6-e7d78b358f9b'
+    # resource_group = 'CopilotEyesOff'
+    # workspace_name = 'copilotEyesOffWestUS3'
+    # default_compute_target = "A100-40G-non-ipp"
+    # ws = Workspace(subscription_id, resource_group, workspace_name)
+    # ds = Datastore.get(ws, "blob_data_babela100")
+    # train_dataset = Dataset.get_by_name(ws, "megatron_github_300B")
+    # vocab_dataset = Dataset.get_by_name(ws, "megatron-lm-vocab")
     # train_dataset = Dataset.get_by_name(ws, "megatron_github_test")
 
     
@@ -37,7 +37,8 @@ def main():
     # train_dataset = Dataset.File.from_files(path=[(ds, "github_data_fim/fim_megatron_github_dataset_all/")], validate=True).as_mount()
     # vocab_dataset = Dataset.File.from_files(path=[( Datastore.get(ws, "workspaceblobstore"), "UI/2023-01-10_180934_UTC/")], validate=True).as_mount()
 
-    
+    # forced_interactive_auth = InteractiveLoginAuthentication(tenant_id="72f988bfc-86f1-41af-91ab-2d7cd011db47", force=True)
+    # ws = Workspace(subscription_id, resource_group, workspace_name, auth=forced_interactive_auth)
     
 
     
@@ -46,17 +47,23 @@ def main():
     # workspace_name = 'CopilotGPUEastUS'
     # default_compute_target = "A10080G"
     # ws = Workspace(subscription_id, resource_group, workspace_name)
-    # ds = Datastore.get(ws, "babela100wus39060115481")
     # train_dataset = Dataset.get_by_name(ws, "megatron_github_300B")
     # vocab_dataset = Dataset.get_by_name(ws, "megatron-lm-vocab")
+    
 
     
-    # subscription_id = '9ec1d932-0f3f-486c-acc6-e7d78b358f9b'
-    # resource_group = 'BabelReference-USW3'
-    # workspace_name = 'BabelEUSReference'
-    # default_compute_target = "A10080G"
-    # ws = Workspace(subscription_id, resource_group, workspace_name)
-    # ds = Datastore.get(ws, "babela100")
+    subscription_id = '9ec1d932-0f3f-486c-acc6-e7d78b358f9b'
+    resource_group = 'BabelReference'
+    workspace_name = 'BabelEUSReference'
+    default_compute_target = "A10080G"
+    # ws = Workspace(subscription_id, resource_group, workspace_name, auth=forced_interactive_auth)
+    ws = Workspace(subscription_id, resource_group, workspace_name)
+    ds = Datastore.get(ws, "babela100")
+    # train_dataset = Dataset.File.from_files(path=[(ds, "github_data_fim/fim_megatron_github_dataset_300B/")], validate=True).as_mount()
+    train_dataset = Dataset.File.from_files(path=[(ds, "github_data_fim/fim_megatron_github_dataset_all/")], validate=True).as_mount()
+    vocab_dataset = Dataset.File.from_files(path=[( Datastore.get(ws, "workspaceblobstore"), "UI/2023-01-22_054438_UTC/")], validate=True).as_mount()
+
+    
 
     train_func = Component.from_yaml(
         ws,
@@ -93,8 +100,10 @@ def main():
     # GLOBAL_BATCH_SIZE = 32
 
     
-    LOAD_BASE_PATH = Dataset.get_by_name(ws, "dense_checkpoint_test")
-    # LOAD_BASE_PATH = Dataset.File.from_files(path=[(ds, "github_data_fim/checkpoints_1.3b_rate_0.5_multihead_py/")], validate=True).as_mount()
+    # LOAD_BASE_PATH = Dataset.get_by_name(ws, "dense_checkpoint_test")
+    # LOAD_BASE_PATH = Dataset.get_by_name(ws, "dense_checkpoint")
+
+    LOAD_BASE_PATH = Dataset.File.from_files(path=[(ds, "github_data_fim/checkpoints_1.3b_rate_0.5_multihead_py/")], validate=True).as_mount()
 
     # EP_SIZE = 32
     EP_SIZE = 8
