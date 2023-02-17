@@ -359,22 +359,22 @@ megatron_options=" \
         --log-validation-ppl-to-tensorboard \
         --artifact-dir ${TENSORBOARD_DIR} \
   	    --fim-rate 0.9 \
-        
         --load-base-version ${load_base_version} \
+        --load-base ${LOAD_BASE_PATH} \
         --tokenizer-type GPT2BPETokenizerWithFIM"
         
 
-if [${#LOAD_BASE_PATH}  -gt 0]; then
-echo "adding load base path arg"
-megatron_options="${megatron_options} \
-        --load-base ${LOAD_BASE_PATH}"
-fi
+# if [${#LOAD_BASE_PATH}  -gt 0]; then
+# echo "adding load base path arg"
+# megatron_options="${megatron_options} \
+#         --load-base ${LOAD_BASE_PATH}"
+# fi
 
-if [${#LOAD_PATH}  -gt 10]; then
-echo "adding load path arg"
-megatron_options="${megatron_options} \
-        --load ${LOAD_PATH}"
-fi
+# if [${#LOAD_PATH}  -gt 10]; then
+# echo "adding load path arg"
+# megatron_options="${megatron_options} \
+#         --load ${LOAD_PATH}"
+# fi
 
 
         # --wandb-entity-name chuyentoankhtn \

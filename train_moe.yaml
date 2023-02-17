@@ -4,6 +4,8 @@ display_name: FIM-GPT-Pretraining-MoE
 environment:
   docker: 
     image: b5476ead59e14b909c1c0afdc3422078.azurecr.io/megatron-deepspeed-moe
+    # image: babeleusrefere459829475348.azurecr.io/megatron-deepspeed-moe
+
   #   image: mcr.microsoft.com/azureml/curated/acpt-pytorch-1.11-py38-cuda11.5-gpu
   # conda:
   #   conda_dependencies:

@@ -854,7 +854,7 @@ class ParallelTransformer(MegatronModule):
                 layer = k.split(".")[1]
 
                 print("loading layer", k, "from mlp layer", layer)
-                print("keys in mlp layer", mlp_layers[layer].keys())
+                # print("keys in mlp layer", mlp_layers[layer].keys())
 
                 new_state_dict = {}
                 for n in range(len(mod.deepspeed_moe.experts.deepspeed_experts)):
@@ -872,6 +872,21 @@ class ParallelTransformer(MegatronModule):
                         new_state_dict[new_key] = mlp_weight
 
                 if version == "v1":
+                    missing_keys, unexpected_keys = mod.load_state_dict(new_state_dict, strict=False)
+                    print("moe mod missing keys")
+                    print(missing_keys)
+                    print("moe mod unexpected_keys")
+                    print(unexpected_keys)
+                    print()
+                    
+                elif version == "v2":
+                    print("version 2, adding gaussian noise")  # should this noise be added instead row-wise or column-wise?
+
+                    for param_name, param in new_state_dict.items():
+                        with torch.no_grad():
+                            param[:] = param[:] + torch.randn(param.shape) * param.std() * .01
+
+
                     missing_keys, unexpected_keys = mod.load_state_dict(new_state_dict, strict=False)
                     print("moe mod missing keys")
                     print(missing_keys)

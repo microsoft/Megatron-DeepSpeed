@@ -16,24 +16,28 @@ import itertools
 
 
 def main():
-    # subscription_id = '9ec1d932-0f3f-486c-acc6-e7d78b358f9b'
-    # resource_group = 'CopilotEyesOff'
-    # workspace_name = 'copilotEyesOffWestUS3'
-    # default_compute_target = "A100-40G-non-ipp"
-    # ws = Workspace(subscription_id, resource_group, workspace_name)
-    # ds = Datastore.get(ws, "blob_data_babela100")
+    subscription_id = '9ec1d932-0f3f-486c-acc6-e7d78b358f9b'
+    resource_group = 'CopilotEyesOff'
+    workspace_name = 'copilotEyesOffWestUS3'
+    default_compute_target = "A100-40G-non-ipp"
+    ws = Workspace(subscription_id, resource_group, workspace_name)
+    ds = Datastore.get(ws, "blob_data_babela100")
+    train_dataset = Dataset.get_by_name(ws, "megatron_github_300B")
+    vocab_dataset = Dataset.get_by_name(ws, "megatron-lm-vocab")
     # train_dataset = Dataset.get_by_name(ws, "megatron_github_test")
-    # vocab_dataset = Dataset.get_by_name(ws, "megatron-lm-vocab")
 
     
-    subscription_id = '79f57c16-00fe-48da-87d4-5192e86cd047'
-    resource_group = 'alexanderopenai64'
-    workspace_name = 'AlexanderOpenAI64'
-    default_compute_target = "V100-32G"
-    ws = Workspace(subscription_id, resource_group, workspace_name)
-    ds = Datastore.get(ws, "babela100")
-    train_dataset = Dataset.File.from_files(path=[(ds, "github_data_fim/fim_megatron_github_dataset_all/")], validate=True).as_mount()
-    vocab_dataset = Dataset.File.from_files(path=[( Datastore.get(ws, "workspaceblobstore"), "UI/2023-01-10_180934_UTC/")], validate=True).as_mount()
+    # subscription_id = '79f57c16-00fe-48da-87d4-5192e86cd047'
+    # resource_group = 'alexanderopenai64'
+    # workspace_name = 'AlexanderOpenAI64'
+    # default_compute_target = "V100-32G"
+    # ws = Workspace(subscription_id, resource_group, workspace_name)
+    # ds = Datastore.get(ws, "babela100")
+    # train_dataset = Dataset.File.from_files(path=[(ds, "github_data_fim/fim_megatron_github_dataset_300B/")], validate=True).as_mount()
+    # train_dataset = Dataset.File.from_files(path=[(ds, "github_data_fim/fim_megatron_github_dataset_all/")], validate=True).as_mount()
+    # vocab_dataset = Dataset.File.from_files(path=[( Datastore.get(ws, "workspaceblobstore"), "UI/2023-01-10_180934_UTC/")], validate=True).as_mount()
+
+    
     
 
     
@@ -43,6 +47,8 @@ def main():
     # default_compute_target = "A10080G"
     # ws = Workspace(subscription_id, resource_group, workspace_name)
     # ds = Datastore.get(ws, "babela100wus39060115481")
+    # train_dataset = Dataset.get_by_name(ws, "megatron_github_300B")
+    # vocab_dataset = Dataset.get_by_name(ws, "megatron-lm-vocab")
 
     
     # subscription_id = '9ec1d932-0f3f-486c-acc6-e7d78b358f9b'
@@ -60,15 +66,54 @@ def main():
     )
     
     
-    # .as_mount()
+
+    
+    # NUM_LAYERS=2
+    # HIDDEN_SIZE=512
+    # NUM_ATTN_HEADS=4
+    # TRAIN_TOKENS=10
+    # LR_DECAY_TOKENS=10
+    # WARMUP_TOKENS=10
+    # EVAL_INTERVAL=50
+    # SAVE_INTERVAL=2500000
+    # instance_count = 1
+
+
+    
+    NUM_LAYERS=24
+    HIDDEN_SIZE=2048
+    NUM_ATTN_HEADS=16
+    
+    # TRAIN_TOKENS=   300000000000
+    TRAIN_TOKENS=   int(300000000000 / 100)
+    LR_DECAY_TOKENS=TRAIN_TOKENS
+    WARMUP_TOKENS=375000000
+    EVAL_INTERVAL=1000
+    SAVE_INTERVAL=20000
+    # GLOBAL_BATCH_SIZE = 32
+
+    
+    LOAD_BASE_PATH = Dataset.get_by_name(ws, "dense_checkpoint_test")
+    # LOAD_BASE_PATH = Dataset.File.from_files(path=[(ds, "github_data_fim/checkpoints_1.3b_rate_0.5_multihead_py/")], validate=True).as_mount()
+
+    # EP_SIZE = 32
+    EP_SIZE = 8
+
+    instance_count = 1
+
+
+    load_base_version = "v1"
+    
+    GLOBAL_BATCH_SIZE = int(4 * instance_count* 8)
 
 
     # timestamp = datetime.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d-%H%M%S')
     # output_path = f'github_moe_pretrain_misantac/logs-{timestamp}'
     @dsl.pipeline(
-        name=f"megatron pretrain",
+        name=f"megatron load_base={load_base_version} EP_SIZE={EP_SIZE} ",
         default_compute_target=default_compute_target,
         # default_compute_target="d15",
+
         default_datastore='workspaceblobstore',
     )
     def train_pipeline():
@@ -94,27 +139,34 @@ def main():
             # LOAD_PATH = Dataset.get_by_name(ws, "dummy_megatron_checkpoint"),
 
             # LOAD_BASE_PATH = Dataset.get_by_name(ws, "dummy_megatron_checkpoint"),
-            LOAD_BASE_PATH = Dataset.get_by_name(ws, "dummy_megatron_checkpoint_v2"),
+            # LOAD_BASE_PATH = Dataset.get_by_name(ws, "dummy_megatron_checkpoint_v2"),
 
-            EP_SIZE=8,
+            LOAD_BASE_PATH=LOAD_BASE_PATH,
+
+            load_base_version=load_base_version,
+
+            EP_SIZE=EP_SIZE,
 
 
-            NUM_LAYERS=2,
-            HIDDEN_SIZE=512,
-            NUM_ATTN_HEADS=4,
+            NUM_LAYERS=NUM_LAYERS,
+            HIDDEN_SIZE=HIDDEN_SIZE,
+            NUM_ATTN_HEADS=NUM_ATTN_HEADS,
 
             NUM_GPUS=8,
 
-            TRAIN_TOKENS=2500000,
-            WARMUP_TOKENS=10,
-            LR_DECAY_TOKENS=10,
-            EVAL_INTERVAL=50,
-            SAVE_INTERVAL=50,
-            GLOBAL_BATCH_SIZE=32,
+            TRAIN_TOKENS=TRAIN_TOKENS,
+            WARMUP_TOKENS=WARMUP_TOKENS,
+            LR_DECAY_TOKENS=LR_DECAY_TOKENS,
+            EVAL_INTERVAL=EVAL_INTERVAL,
+            SAVE_INTERVAL=SAVE_INTERVAL,
+
+
+            
+            GLOBAL_BATCH_SIZE=GLOBAL_BATCH_SIZE,
 
         )
-        # trainer.runsettings.resource_layout.configure(instance_count=2, process_count_per_node=8)
-        trainer.runsettings.resource_layout.configure(instance_count=1, process_count_per_node=8)
+
+        trainer.runsettings.resource_layout.configure(instance_count=instance_count, process_count_per_node=8)
 
 
         # trainer.outputs.save_path.configure(
