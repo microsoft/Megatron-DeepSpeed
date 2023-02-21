@@ -279,7 +279,8 @@ def load_checkpoint(model, optimizer, lr_scheduler, load_arg='load', strict=True
                 load_module_strict=strict, load_optimizer_states=False,
                 load_lr_scheduler_states=False, load_module_only=True)
         elif load_arg == "load_base":
-            print_rank_0("loading MoE from base model...")
+            print_rank_0(f"loading MoE from base model with tag {args.load_base_tag}, if tag is None will load latest....")
+
             has_moe_layers = model[0].has_moe_layers
             model[0].has_moe_layers = False
             loaded_dir, state_dict = model[0].load_checkpoint(load_dir,
@@ -287,6 +288,7 @@ def load_checkpoint(model, optimizer, lr_scheduler, load_arg='load', strict=True
                 load_optimizer_states=False,
                 load_lr_scheduler_states=False, 
                 load_module_only=True,
+                tag=args.load_base_tag
                 )
             model[0].has_moe_layers = has_moe_layers
             

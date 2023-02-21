@@ -503,7 +503,7 @@ def setup_model_and_optimizer(model_provider_func, teacher=False,
         if args.load_base is not None:
             assert args.load is None, "Can only load from one of args.load or args.load_base"
 
-            args.iteration = load_checkpoint(model, None, None, load_arg="load_base", strict=False)
+            args.iteration = load_checkpoint(model, None, None, load_arg="load_base", strict=False, load_only_weights=True)
         if args.load is not None:
             args.iteration = load_checkpoint(model, None, None, strict=False)
         else:
@@ -992,6 +992,7 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
                     print_rank_0("manual log " + k)
                     continue
         azureml_run.log("step", iteration, description="step")
+        azureml_run.log("train_tokens", args.consumed_train_tokens, description="consumed train tokens")
 
     if iteration % args.log_interval == 0:
         elapsed_time = timers('interval-time').elapsed()

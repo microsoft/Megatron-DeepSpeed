@@ -229,8 +229,8 @@ INIT_STD=0.014
 # INIT_STD=0.01
 
 ## Activation checkpointing saves GPU memory, but reduces training speed
-ACTIVATION_CHECKPOINT="true"
-# ACTIVATION_CHECKPOINT="false"
+# ACTIVATION_CHECKPOINT="true"
+ACTIVATION_CHECKPOINT="false"
 ###############################################################################
 ### Output and data configs
 current_time=$(date "+%Y.%m.%d-%H.%M.%S")
@@ -304,8 +304,8 @@ else
     VOCAB_PATH="${VOCAB_DIR}/vocab.json"
     MERGE_PATH="${VOCAB_DIR}/merges.txt"
     #DATA_DIR="0.0575 ${DATA_DIR_C} 0.1954 ${DATA_DIR_CPP} 0.1461 ${DATA_DIR_JAVA} 0.1294 ${DATA_DIR_JS} 0.0606 ${DATA_DIR_OTHERS} 0.0532 $ {DATA_DIR_PHP} 0.0448 ${DATA_DIR_TS} 0.2044 ${DATA_DIR_PY} 0.0501 ${DATA_DIR_RB} 0.0585 ${DATA_DIR_CSHARP}"
-    DATA_BLEND="${DATA_PATH}/c/train300"
-    #DATA_BLEND="${DATA_PATH}/py_train"
+    # DATA_BLEND="${DATA_PATH}/c/train300"
+    DATA_BLEND="${DATA_PATH}/py_train"
 
 fi
 ###############################################################################
@@ -361,6 +361,8 @@ megatron_options=" \
   	    --fim-rate 0.9 \
         --load-base-version ${load_base_version} \
         --load-base ${LOAD_BASE_PATH} \
+        --load-base-tag ${LOAD_BASE_TAG} \
+        --reset-iteration \
         --tokenizer-type GPT2BPETokenizerWithFIM"
         
 

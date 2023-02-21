@@ -330,6 +330,11 @@ def _add_network_size_args(parser):
                        help='Disable BERT binary head.',
                        dest='bert_binary_head')
 
+
+                       
+    group.add_argument('--h3-layers', type=str, default='',
+                           help='List of layers to use h3 - define like --h3-layers="1,2,3,4"')
+
     return parser
 
 
@@ -966,6 +971,10 @@ def _add_upcycle_moe_load_args(parser):
     
     group.add_argument('--load-base', type=str, default=None,
                        help='Directory containing a base model checkpoint to initialize a MoE model with.')
+    
+    
+    group.add_argument('--load-base-tag', type=str, default=None,
+                       help='Tag for loading base model (which checkpoint to load).')
     
     group.add_argument('--load-base-version', type=str, default="v1",
                        help='Which version of load-base to use.')

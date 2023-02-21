@@ -30,6 +30,9 @@ from torch import distributed as dist
 import deepspeed
 from deepspeed.moe.layer import MoE
 from deepspeed.accelerator import get_accelerator
+
+from megatron.model.h3.ssm.h3 import H3
+
 # flags required to enable jit fusion kernels
 torch._C._jit_set_profiling_mode(False)
 torch._C._jit_set_profiling_executor(False)
@@ -107,6 +110,43 @@ class ParallelMLP(MegatronModule):
         # [s, b, h]
         output, output_bias = self.dense_4h_to_h(intermediate_parallel)
         return output, output_bias
+
+
+
+class ParallelH3(MegatronModule):
+    """Parallel H3 layer abstract class.
+
+    H3 layer takes input with size [b, s, h]
+    and returns output of the same size.
+    """
+
+    def __init__(self, layer_number):
+        super(ParallelH3, self).__init__()
+        args = get_args()
+        self.fp16 = args.fp16
+        self.bf16 = args.bf16
+        self.layer_number = max(1, layer_number)
+
+        d_model = args.hidden_size
+        self.h3 = H3(
+            d_model,
+            d_state=64,
+            # l_max=None,
+            # head_dim=1,
+            use_fast_fftconv=False,
+            dropout=0.0,   # Just to absorb the kwarg
+            layer_idx=self.layer_number,
+            # device=None, dtype=None,
+            # SSM Kernel arguments
+            # **kernel_args,
+        )
+
+    def forward(self, hidden_states):
+    # def forward(self, hidden_states, attention_mask, layer_past=None,
+    #             get_key_value=False, encoder_output=None):
+        
+        return self.h3(hidden_states)
+
 
 class ParallelAttention(MegatronModule):
     """Parallel self-attention layer abstract class.
@@ -416,14 +456,25 @@ class ParallelTransformerLayer(MegatronModule):
         self.input_layernorm = LayerNorm(
             args.hidden_size,
             eps=args.layernorm_epsilon)
+        
+        self.use_h3 = False
+        if str(layer_number) in args.h3_layers.split(","):
+            print(f"Layer {layer_number} is a H3 layer, not using attention!")
+            self.use_h3 = True
 
-        # Self attention.
-        self.attention = ParallelAttention(
-            init_method,
-            output_layer_init_method,
-            layer_number,
-            attention_type=AttnType.self_attn,
-            attn_mask_type=self_attn_mask_type)
+            self.h3 = ParallelH3(layer_number=layer_number)
+        
+        else:
+
+            # Self attention.
+            self.attention = ParallelAttention(
+                init_method,
+                output_layer_init_method,
+                layer_number,
+                attention_type=AttnType.self_attn,
+                attn_mask_type=self_attn_mask_type)
+            
+        
         self.hidden_dropout = args.hidden_dropout
         self.bias_dropout_fusion = args.bias_dropout_fusion
 
@@ -472,55 +523,45 @@ class ParallelTransformerLayer(MegatronModule):
 
         # Layer norm at the beginning of the transformer layer.
         layernorm_output = self.input_layernorm(hidden_states)
-        # Self attention.
-        attention_output, attention_bias = \
-            self.attention(layernorm_output,
-                                attention_mask,
-                                layer_past=layer_past,
-                                get_key_value=get_key_value)
 
-        if get_key_value:
-            attention_output, presents = attention_output
-
-        # Residual connection.
-        if self.apply_residual_connection_post_layernorm:
-            residual = layernorm_output
-        else:
-            residual = hidden_states
-
-        # jit scripting for a nn.module (with dropout) is not
-        # trigerring the fusion kernel. For now, we use two
-        # different nn.functional routines to account for varying
-        # dropout semantics during training and inference phases.
-        if self.bias_dropout_fusion:
-            if self.training:
-                bias_dropout_add_func = bias_dropout_add_fused_train
-            else:
-                bias_dropout_add_func = bias_dropout_add_fused_inference
-        else:
-            bias_dropout_add_func = get_bias_dropout_add(self.training)
-
-        # re-enable torch grad to enable fused optimization.
-        with torch.enable_grad():
-            layernorm_input = bias_dropout_add_func(
-                attention_output,
-                attention_bias.expand_as(residual),
-                residual,
-                self.hidden_dropout)
-
-        # Layer norm post the self attention.
-        layernorm_output = self.post_attention_layernorm(layernorm_input)
-
-        if self.layer_type == LayerType.decoder:
-            attention_output, attention_bias = \
-                self.inter_attention(layernorm_output,
-                                     enc_dec_attn_mask,
-                                     encoder_output=encoder_output)
-            # residual connection
+        if self.use_h3:
+            h3_output = self.h3(layernorm_output)
+            # Residual connection.
             if self.apply_residual_connection_post_layernorm:
                 residual = layernorm_output
             else:
-                residual = layernorm_input
+                residual = hidden_states
+
+            0/0
+            
+        else:
+            # Self attention.
+            attention_output, attention_bias = \
+                self.attention(layernorm_output,
+                                    attention_mask,
+                                    layer_past=layer_past,
+                                    get_key_value=get_key_value)
+
+            if get_key_value:
+                attention_output, presents = attention_output
+
+            # Residual connection.
+            if self.apply_residual_connection_post_layernorm:
+                residual = layernorm_output
+            else:
+                residual = hidden_states
+
+            # jit scripting for a nn.module (with dropout) is not
+            # trigerring the fusion kernel. For now, we use two
+            # different nn.functional routines to account for varying
+            # dropout semantics during training and inference phases.
+            if self.bias_dropout_fusion:
+                if self.training:
+                    bias_dropout_add_func = bias_dropout_add_fused_train
+                else:
+                    bias_dropout_add_func = bias_dropout_add_fused_inference
+            else:
+                bias_dropout_add_func = get_bias_dropout_add(self.training)
 
             # re-enable torch grad to enable fused optimization.
             with torch.enable_grad():
@@ -530,39 +571,61 @@ class ParallelTransformerLayer(MegatronModule):
                     residual,
                     self.hidden_dropout)
 
-            # Layer norm post the decoder attention
-            layernorm_output = self.post_inter_attention_layernorm(layernorm_input)
+            # Layer norm post the self attention.
+            layernorm_output = self.post_attention_layernorm(layernorm_input)
 
-        # MLP.
-        moe_loss = torch.tensor(0.0, device=layernorm_output.device, dtype=layernorm_output.dtype)
-        mlp_bias = torch.tensor(0.0, device=layernorm_output.device, dtype=layernorm_output.dtype)
+            if self.layer_type == LayerType.decoder:
+                attention_output, attention_bias = \
+                    self.inter_attention(layernorm_output,
+                                        enc_dec_attn_mask,
+                                        encoder_output=encoder_output)
+                # residual connection
+                if self.apply_residual_connection_post_layernorm:
+                    residual = layernorm_output
+                else:
+                    residual = layernorm_input
 
-        if self.num_experts == 1:
-            mlp_output, mlp_bias = self.mlp(layernorm_output)
-        else:
-            mlp_output, moe_loss, _ = self.mlp(layernorm_output)
+                # re-enable torch grad to enable fused optimization.
+                with torch.enable_grad():
+                    layernorm_input = bias_dropout_add_func(
+                        attention_output,
+                        attention_bias.expand_as(residual),
+                        residual,
+                        self.hidden_dropout)
 
-        # Second residual connection.
-        if self.apply_residual_connection_post_layernorm:
-            residual = layernorm_output
-        else:
-            residual = layernorm_input
+                # Layer norm post the decoder attention
+                layernorm_output = self.post_inter_attention_layernorm(layernorm_input)
 
-        # re-enable torch grad to enable fused optimization.
-        with torch.enable_grad():
-            #if self.num_experts <= 1:
-            output = bias_dropout_add_func(
-                    mlp_output,
-                    mlp_bias.expand_as(residual),
-                    residual,
-                    self.hidden_dropout)
-            #else:
-            #    output = mlp_output + residual
+            # MLP.
+            moe_loss = torch.tensor(0.0, device=layernorm_output.device, dtype=layernorm_output.dtype)
+            mlp_bias = torch.tensor(0.0, device=layernorm_output.device, dtype=layernorm_output.dtype)
 
-        if get_key_value:
-            output = [output, presents]
+            if self.num_experts == 1:
+                mlp_output, mlp_bias = self.mlp(layernorm_output)
+            else:
+                mlp_output, moe_loss, _ = self.mlp(layernorm_output)
 
-        return output, moe_loss
+            # Second residual connection.
+            if self.apply_residual_connection_post_layernorm:
+                residual = layernorm_output
+            else:
+                residual = layernorm_input
+
+            # re-enable torch grad to enable fused optimization.
+            with torch.enable_grad():
+                #if self.num_experts <= 1:
+                output = bias_dropout_add_func(
+                        mlp_output,
+                        mlp_bias.expand_as(residual),
+                        residual,
+                        self.hidden_dropout)
+                #else:
+                #    output = mlp_output + residual
+
+            if get_key_value:
+                output = [output, presents]
+
+            return output, moe_loss
 
 class ParallelTransformerLayerPipe(ParallelTransformerLayer):
     """Extends ParallelTransformerLayer to forward attention_mask through the pipeline.

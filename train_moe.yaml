@@ -15,9 +15,8 @@ environment:
   #     dependencies:
   #     - python=3.8.13
   #     - pip:
-  #       - wandb
-  #       - deepspeed==0.8.0
-  #       - regex
+        # - einops
+        # - opt-einsum
   # build:
   #   path: ./
   #   build.dockerfile_path:
@@ -133,6 +132,11 @@ inputs:
     optional: true
     default: "v1"
     type: string
+  LOAD_BASE_TAG:
+    description: load-base tag
+    optional: true
+    default: ""
+    type: string
 
 
 
@@ -178,6 +182,7 @@ launcher:
       [--LOAD_PATH {inputs.LOAD_PATH}]
       [--LOAD_BASE_PATH {inputs.LOAD_BASE_PATH}]
       [--load_base_version {inputs.load_base_version}]
+      [--LOAD_BASE_TAG {inputs.LOAD_BASE_TAG}]
 
 
 tags: 

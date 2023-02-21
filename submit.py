@@ -34,7 +34,7 @@ def main():
     # ws = Workspace(subscription_id, resource_group, workspace_name)
     # ds = Datastore.get(ws, "babela100")
     # train_dataset = Dataset.File.from_files(path=[(ds, "github_data_fim/fim_megatron_github_dataset_300B/")], validate=True).as_mount()
-    # train_dataset = Dataset.File.from_files(path=[(ds, "github_data_fim/fim_megatron_github_dataset_all/")], validate=True).as_mount()
+    # train_dataset = Dataset.File.from_files(path=[(ds, "github_data_fim/fim_megatron_github_dataset_all/")], validate=True).as_mount()   # for testing
     # vocab_dataset = Dataset.File.from_files(path=[( Datastore.get(ws, "workspaceblobstore"), "UI/2023-01-10_180934_UTC/")], validate=True).as_mount()
 
     # forced_interactive_auth = InteractiveLoginAuthentication(tenant_id="72f988bfc-86f1-41af-91ab-2d7cd011db47", force=True)
@@ -56,13 +56,14 @@ def main():
     resource_group = 'BabelReference'
     workspace_name = 'BabelEUSReference'
     default_compute_target = "A10080G"
-    # ws = Workspace(subscription_id, resource_group, workspace_name, auth=forced_interactive_auth)
     ws = Workspace(subscription_id, resource_group, workspace_name)
     ds = Datastore.get(ws, "babela100")
-    # train_dataset = Dataset.File.from_files(path=[(ds, "github_data_fim/fim_megatron_github_dataset_300B/")], validate=True).as_mount()
-    train_dataset = Dataset.File.from_files(path=[(ds, "github_data_fim/fim_megatron_github_dataset_all/")], validate=True).as_mount()
+
+
+    train_dataset = Dataset.File.from_files(path=[(ds, "github_data_fim/fim_megatron_github_dataset_300B/")], validate=True).as_mount()
     vocab_dataset = Dataset.File.from_files(path=[( Datastore.get(ws, "workspaceblobstore"), "UI/2023-01-22_054438_UTC/")], validate=True).as_mount()
 
+    # train_dataset = Dataset.File.from_files(path=[(ds, "github_data_fim/fim_megatron_github_dataset_all/")], validate=True).as_mount()   # for testing
     
 
     train_func = Component.from_yaml(
@@ -73,6 +74,13 @@ def main():
     )
     
     
+
+    # mode = "load_base_train"
+
+    # if mode == "load_base_train":
+
+    # elif mode == "debug":
+
 
     
     # NUM_LAYERS=2
@@ -88,13 +96,15 @@ def main():
 
     
     NUM_LAYERS=24
-    HIDDEN_SIZE=2048
+    HIDDEN_SIZE=1024
     NUM_ATTN_HEADS=16
     
-    # TRAIN_TOKENS=   300000000000
-    TRAIN_TOKENS=   int(300000000000 / 100)
+    TRAIN_TOKENS=   300000000000
+    
+    TRAIN_TOKENS=   int((300000000000 * 2) / 3)
+
     LR_DECAY_TOKENS=TRAIN_TOKENS
-    WARMUP_TOKENS=375000000
+    WARMUP_TOKENS= int((375000000 * 2) / 3)
     EVAL_INTERVAL=1000
     SAVE_INTERVAL=20000
     # GLOBAL_BATCH_SIZE = 32
@@ -103,12 +113,14 @@ def main():
     # LOAD_BASE_PATH = Dataset.get_by_name(ws, "dense_checkpoint_test")
     # LOAD_BASE_PATH = Dataset.get_by_name(ws, "dense_checkpoint")
 
-    LOAD_BASE_PATH = Dataset.File.from_files(path=[(ds, "github_data_fim/checkpoints_1.3b_rate_0.5_multihead_py/")], validate=True).as_mount()
+    LOAD_BASE_PATH = Dataset.File.from_files(path=[(ds, "github_data_fim/FIM_350M_FR_0.5_dense/")], validate=True).as_mount()
+    LOAD_BASE_TAG = "global_step200000"
 
-    # EP_SIZE = 32
-    EP_SIZE = 8
+    # EP_SIZE = 8
+    # instance_count = 1
 
-    instance_count = 1
+    EP_SIZE = 32
+    instance_count = 8
 
 
     load_base_version = "v1"
@@ -127,30 +139,12 @@ def main():
     )
     def train_pipeline():
         trainer = train_func(
-            # train_dataset = Dataset.get_by_name(ws, "megatron_github_300B"),
-            # train_dataset = Dataset.File.from_files(path=[(ds, "github_data_fim/fim_megatron_github_dataset_all/")], validate=True).as_mount(),
-            # train_dataset = Dataset.get_by_name(ws, "megatron_github_test"),
-
             train_dataset=train_dataset,
            
-
-            # artifact_dir = Dataset.File.from_files(path=[(ds, "github_data_fim/artifacts/")], validate=True).as_mount(),
-            # artifact_dir = Dataset.File.from_files(path=[(ds, "github_data_fim/artifacts_test/")], validate=True).as_mount(),
-
-            # vocab_dataset = Dataset.get_by_name(ws, "megatron-lm-vocab"),
-            # vocab_dataset = Dataset.File.from_files(path=[( Datastore.get(ws, "workspaceblobstore"), "UI/2023-01-10_180934_UTC/")], validate=True).as_mount(),
-
             vocab_dataset=vocab_dataset,
 
-            
-
-
-            # LOAD_PATH = Dataset.get_by_name(ws, "dummy_megatron_checkpoint"),
-
-            # LOAD_BASE_PATH = Dataset.get_by_name(ws, "dummy_megatron_checkpoint"),
-            # LOAD_BASE_PATH = Dataset.get_by_name(ws, "dummy_megatron_checkpoint_v2"),
-
             LOAD_BASE_PATH=LOAD_BASE_PATH,
+            LOAD_BASE_TAG=LOAD_BASE_TAG,
 
             load_base_version=load_base_version,
 
@@ -161,7 +155,7 @@ def main():
             HIDDEN_SIZE=HIDDEN_SIZE,
             NUM_ATTN_HEADS=NUM_ATTN_HEADS,
 
-            NUM_GPUS=8,
+            NUM_GPUS=8*instance_count,
 
             TRAIN_TOKENS=TRAIN_TOKENS,
             WARMUP_TOKENS=WARMUP_TOKENS,
