@@ -31,7 +31,7 @@ import deepspeed
 from deepspeed.moe.layer import MoE
 from deepspeed.accelerator import get_accelerator
 
-from megatron.model.h3.ssm.h3 import H3
+# from megatron.model.h3.ssm.h3 import H3
 
 # flags required to enable jit fusion kernels
 torch._C._jit_set_profiling_mode(False)
@@ -462,7 +462,8 @@ class ParallelTransformerLayer(MegatronModule):
             print(f"Layer {layer_number} is a H3 layer, not using attention!")
             self.use_h3 = True
 
-            self.h3 = ParallelH3(layer_number=layer_number)
+            # self.h3 = ParallelH3(layer_number=layer_number)
+            0/0
         
         else:
 
@@ -531,6 +532,9 @@ class ParallelTransformerLayer(MegatronModule):
                 residual = layernorm_output
             else:
                 residual = hidden_states
+
+            # Layer norm post the self attention.
+            layernorm_output = self.post_attention_layernorm(layernorm_input)
 
             0/0
             
