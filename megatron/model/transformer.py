@@ -924,7 +924,17 @@ class ParallelTransformer(MegatronModule):
                 # print("keys in mlp layer", mlp_layers[layer].keys())
 
                 new_state_dict = {}
-                for n in range(len(mod.deepspeed_moe.experts.deepspeed_experts)):
+                
+                n_experts = len(mod.deepspeed_moe.experts.deepspeed_experts)
+                for n in range(n_experts):
+                    if version == "v5" and n > int(n_experts / 2):
+                        print(f"using v5, not loading expert {n} out of {n_experts} with the dense model!")
+                        continue 
+
+                    if version == "v6":
+                        new_state_dict["deepspeed_moe.gate.wg.weight"] = torch.zeros_like(mod.deepspeed_moe.gate.wg.weight)
+                        print("using v6, initializing gate with 0")
+
                     for mlp_weight_key, mlp_weight in mlp_layers[layer].items():
 
                         split = mlp_weight_key.split(".")
@@ -935,17 +945,12 @@ class ParallelTransformer(MegatronModule):
 
                         # new_key = f"{split[0]}.{split[1]}.mlp.deepspeed_moe.experts.deepspeed_experts.{n}.dense_h_to_4h.{split[-1]}"
                         new_key = f"deepspeed_moe.experts.deepspeed_experts.{n}.{split[-2]}.{split[-1]}"
-                        print("old key", mlp_weight_key, "new key", new_key)
+                        print("shape", mlp_weight.shape, "old key", mlp_weight_key, "new key", new_key)
                         new_state_dict[new_key] = mlp_weight
 
                 if version == "v1":
-                    missing_keys, unexpected_keys = mod.load_state_dict(new_state_dict, strict=False)
-                    print("moe mod missing keys")
-                    print(missing_keys)
-                    print("moe mod unexpected_keys")
-                    print(unexpected_keys)
-                    print()
-                    
+                    print("version 1, nothing special")
+
                 elif version == "v2":
                     print("version 2, adding gaussian noise")  # should this noise be added instead row-wise or column-wise?
 
@@ -953,14 +958,43 @@ class ParallelTransformer(MegatronModule):
                         with torch.no_grad():
                             param[:] = param[:] + torch.randn(param.shape) * param.std() * .01
 
+                elif version == "v3":
+                    print("version 3, using 0.1 dropout per-neuron")
 
-                    missing_keys, unexpected_keys = mod.load_state_dict(new_state_dict, strict=False)
-                    print("moe mod missing keys")
-                    print(missing_keys)
-                    print("moe mod unexpected_keys")
-                    print(unexpected_keys)
-                    print()
+
+                    for param_name, param in new_state_dict.items():
+                        with torch.no_grad():
+                            # weights are shape output, input
+                            print("weight shape", param.shape)
+
+                            print(f"{param_name} before zero:", param[param == 0].sum())
+                            param[:] = torch.nn.functional.dropout2d(param.unqueeze(0), p=.1).squeeze(0)
+                            print(f"{param_name} after zero:", param[param == 0].sum())
+
+                elif version == "v4":
+                    print("version 3, using 0.1 dropout on all mlp weights")
+
+                    for param_name, param in new_state_dict.items():
+                        with torch.no_grad():
+                            print(f"{param_name} before zero:", param[param == 0].sum())
+                            torch.nn.functional.dropout(param, p=0.1, training=False, inplace=True)
+                            print(f"{param_name} after zero:", param[param == 0].sum())
+                elif version == "v5":
+
+                    print("using v5, check above logs - should have loaded only half of experts with dense model")
+                elif version == "v6":
+
+                    print("using v6 - check above logs, should initialize gate with 0s")
+
+
                 else:
                     print("unknown version", version)
                     0/0
 
+                missing_keys, unexpected_keys = mod.load_state_dict(new_state_dict, strict=False)
+                print("moe mod missing keys")
+                print(missing_keys)
+                print("moe mod unexpected_keys")
+                print(unexpected_keys)
+                print()
+                    

@@ -342,7 +342,7 @@ megatron_options=" \
         --lr ${LR} \
         --min-lr ${MIN_LR} \
         --lr-decay-style cosine \
-        --split 98,2,0 \
+        --split 100,0,0 \
         --log-interval ${LOG_INTERVAL} \
         --eval-interval ${EVAL_INTERVAL} \
         --eval-iters ${EVAL_ITERS} \
@@ -358,13 +358,14 @@ megatron_options=" \
         --log-batch-size-to-tensorboard \
         --log-validation-ppl-to-tensorboard \
         --artifact-dir ${TENSORBOARD_DIR} \
-  	    --fim-rate 0.9 \
+  	    --fim-rate 0.5 \
         --load-base-version ${load_base_version} \
         --load-base ${LOAD_BASE_PATH} \
         --load-base-tag ${LOAD_BASE_TAG} \
         --reset-iteration \
         --tokenizer-type GPT2BPETokenizerWithFIM"
         
+        # --split 98,2,0 \
 
 # if [${#LOAD_BASE_PATH}  -gt 0]; then
 # echo "adding load base path arg"

@@ -99,14 +99,17 @@ def main():
     HIDDEN_SIZE=1024
     NUM_ATTN_HEADS=16
     
-    TRAIN_TOKENS=   300000000000
+    # TRAIN_TOKENS=   300000000000
+
+    # percent = 1
+    percent = 2
     
-    TRAIN_TOKENS=   int((300000000000 * 2) / 3)
+    TRAIN_TOKENS=   int((300000000000 * percent) / 3)
 
     LR_DECAY_TOKENS=TRAIN_TOKENS
-    WARMUP_TOKENS= int((375000000 * 2) / 3)
+    WARMUP_TOKENS= int((375000000 * percent) / 3)
     EVAL_INTERVAL=1000
-    SAVE_INTERVAL=20000
+    SAVE_INTERVAL=10000
     # GLOBAL_BATCH_SIZE = 32
 
     
@@ -114,7 +117,10 @@ def main():
     # LOAD_BASE_PATH = Dataset.get_by_name(ws, "dense_checkpoint")
 
     LOAD_BASE_PATH = Dataset.File.from_files(path=[(ds, "github_data_fim/FIM_350M_FR_0.5_dense/")], validate=True).as_mount()
-    LOAD_BASE_TAG = "global_step200000"
+    # LOAD_BASE_TAG = "global_step200000"
+    # LOAD_BASE_TAG = "global_step400000"  
+    
+    LOAD_BASE_TAG = "global_step190000"
 
     # EP_SIZE = 8
     # instance_count = 1
@@ -128,10 +134,10 @@ def main():
     GLOBAL_BATCH_SIZE = int(4 * instance_count* 8)
 
 
-    # timestamp = datetime.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d-%H%M%S')
-    # output_path = f'github_moe_pretrain_misantac/logs-{timestamp}'
+    timestamp = datetime.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d-%H%M%S')
+    output_path = f'github_moe_pretrain_misantac/logs-{timestamp}'
     @dsl.pipeline(
-        name=f"megatron load_base={load_base_version} EP_SIZE={EP_SIZE} ",
+        name=f"{timestamp} megatron load_base={load_base_version} EP_SIZE={EP_SIZE} ",
         default_compute_target=default_compute_target,
         # default_compute_target="d15",
 
@@ -172,11 +178,11 @@ def main():
         trainer.runsettings.resource_layout.configure(instance_count=instance_count, process_count_per_node=8)
 
 
-        # trainer.outputs.save_path.configure(
-        #     mode="upload",
-        #     path_on_datastore=output_path,
-        #     datastore=ds
-        # )
+        trainer.outputs.model_checkpoint.configure(
+            mode="mount",
+            path_on_datastore=output_path,
+            datastore=ds
+        )
         
         # trainer.outputs.artifact_dir.configure(
         #     mode="upload",
