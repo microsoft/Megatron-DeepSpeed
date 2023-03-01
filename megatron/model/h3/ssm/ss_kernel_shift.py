@@ -40,22 +40,23 @@ class SSKernelShift(OptimModule):
         assert rate == 1.0 and L is not None
 
         # Augment B with state
-        B = self.B
+        B = self.B.float()
+        C = self.C.float()
         if state is not None:
             B = rearrange(torch.cat([rearrange(B, 'h n -> 1 h n'), state], dim=-3),
                           'bp1 h n -> bp1 1 h n')  # (1 + B, 1, H, N)
         B_f = torch.fft.rfft(B, n=2*self.N)
-        C_f = torch.fft.rfft(self.C, n=2*self.N)
+        C_f = torch.fft.rfft(C, n=2*self.N)
         k = torch.fft.irfft(B_f.conj() * C_f, n=2*self.N)[..., :min(self.N, L)]
         # If self.N < L, need to pad with zeros to reach length L
         if self.N < L:
             k = F.pad(k, (0, L - self.N))
         k = k.float()  # Otherwise it could be dtype half
         if state is not None:
-            k, k_state = k[0], k[1:]
+            k, k_state = k[0], k[1:].half()
         else:
             k_state = None
-        return k, k_state
+        return k.half(), k_state
 
     def _setup_step(self):
         # Just here to conform to the interface, eventually we should refactor out

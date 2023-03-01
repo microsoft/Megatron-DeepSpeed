@@ -6,6 +6,8 @@ from einops import rearrange
 
 from megatron.model.h3.ssm.ss_kernel import SSKernel
 
+from megatron import mpu
+
 # try:
 #     from src.ops.fftconv import fftconv_func
 # except ImportError:
@@ -23,6 +25,7 @@ class H3(nn.Module):
     def __init__(
             self,
             d_model,
+            output_layer_init_method,
             d_state=64,
             l_max=None,
             head_dim=1,
@@ -69,7 +72,14 @@ class H3(nn.Module):
         # Pointwise
         # position-wise output transform to mix features
         # Don't use FusedDense since the layout is H first
-        self.output_linear = nn.Linear(self.d_model, self.d_model)
+        # self.output_linear = nn.Linear(self.d_model, self.d_model)
+
+        self.output_linear = mpu.RowParallelLinear(
+            self.d_model,
+            self.d_model,
+            input_is_parallel=True,
+            init_method=output_layer_init_method,
+            skip_bias_add=True)
 
     def forward(self, u, inference_params=None):
         """
@@ -99,6 +109,7 @@ class H3(nn.Module):
                 self.kernel._setup_step()
 
         if inference_params is not None and inference_params.sequence_len_offset > 0:
+            0/0 # not implemented with dense output bias
             y, next_state_k, next_state = self.step(u, state_k, state)
             inference_params.key_value_memory_dict[self.layer_idx][0].copy_(next_state_k)
             inference_params.key_value_memory_dict[self.layer_idx][1].copy_(next_state)
@@ -119,7 +130,7 @@ class H3(nn.Module):
 
         k_og = k
         ssm_k_kernel, _ = self.ssm_k_kernel(L=L_kernel, state=state_k, rate=1.0) # (C H L) (B C H L)
-        ssm_k_kernel = rearrange(ssm_k_kernel, '1 h l -> h l')
+        ssm_k_kernel = rearrange(ssm_k_kernel, '1 h l -> h l').float()
         if not use_fast_fftconv:
             fft_size = L_kernel + L
             ssm_k_kernel_f = torch.fft.rfft(ssm_k_kernel, n=fft_size) # (H 2L)
@@ -179,11 +190,11 @@ class H3(nn.Module):
         # y could be in fp32 because of the SSMs
         if not torch.is_autocast_enabled():
             y = y.to(dtype=self.output_linear.weight.dtype)
-        y = self.output_linear(y)
+        y, bias = self.output_linear(y)
         if L_og < L:
             y = y[:, :L_og, :]
 
-        return y
+        return y.half(), bias
 
     def step(self, u, state_k, state):
         q, k, v = self.q_proj(u), self.k_proj(u), self.v_proj(u)

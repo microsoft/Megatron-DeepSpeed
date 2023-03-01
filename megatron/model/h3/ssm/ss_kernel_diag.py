@@ -35,7 +35,8 @@ except ImportError:
 
 
 _c2r = torch.view_as_real
-_r2c = torch.view_as_complex
+# _r2c = torch.view_as_complex
+_r2c = lambda x: torch.view_as_complex(x.float())
 
 if tuple(map(int, torch.__version__.split('.')[:2])) >= (1, 10):
     _resolve_conj = lambda x: x.conj().resolve_conj()
@@ -74,7 +75,7 @@ class SSKernelDiag(OptimModule):
         self.repeat = self.H // A.size(0)
 
         self.channels = C.shape[0]
-        self.C = nn.Parameter(_c2r(_resolve_conj(C)))
+        self.C = nn.Parameter(_c2r(_resolve_conj(C)).float())
 
         # Register parameters
         if lr is None or isinstance(lr, float): lr_dict = {}

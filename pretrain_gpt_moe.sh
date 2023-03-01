@@ -193,7 +193,7 @@ echo "num parallel experts $EP_PARALLEL_SIZE"
 
 ## Coefficient for MoE loss. We find that 0.01 is a good value at least for
 ## 1.3B MoE-128 model
-MLC=0.01
+# MLC=0.01
 
 ## Below configs adjust the MoE expert token capacity limit during training and
 ## eval. To completely disable capacity limit, set MOE_DROP_TOKEN to false.
@@ -359,19 +359,24 @@ megatron_options=" \
         --log-validation-ppl-to-tensorboard \
         --artifact-dir ${TENSORBOARD_DIR} \
   	    --fim-rate 0.5 \
-        --load-base-version ${load_base_version} \
-        --load-base ${LOAD_BASE_PATH} \
-        --load-base-tag ${LOAD_BASE_TAG} \
         --reset-iteration \
         --tokenizer-type GPT2BPETokenizerWithFIM"
         
         # --split 98,2,0 \
 
-# if [${#LOAD_BASE_PATH}  -gt 0]; then
-# echo "adding load base path arg"
-# megatron_options="${megatron_options} \
-#         --load-base ${LOAD_BASE_PATH}"
-# fi
+if [ ${#LOAD_BASE_PATH}  -gt 0 ]; then
+echo "adding load base path arg"
+megatron_options="${megatron_options} \
+        --load-base-tag ${LOAD_BASE_TAG} \
+        --load-base-version ${load_base_version} \
+        --load-base ${LOAD_BASE_PATH}"
+fi
+
+if [ ${#H3_layers}  -gt 0 ]; then
+echo "adding h3 layers arg"
+megatron_options="${megatron_options} \
+        --h3-layers ${H3_layers}"
+fi
 
 # if [${#LOAD_PATH}  -gt 10]; then
 # echo "adding load path arg"

@@ -27,15 +27,15 @@ def main():
     # train_dataset = Dataset.get_by_name(ws, "megatron_github_test")
 
     
-    # subscription_id = '79f57c16-00fe-48da-87d4-5192e86cd047'
-    # resource_group = 'alexanderopenai64'
-    # workspace_name = 'AlexanderOpenAI64'
-    # default_compute_target = "V100-32G"
-    # ws = Workspace(subscription_id, resource_group, workspace_name)
-    # ds = Datastore.get(ws, "babela100")
-    # train_dataset = Dataset.File.from_files(path=[(ds, "github_data_fim/fim_megatron_github_dataset_300B/")], validate=True).as_mount()
+    subscription_id = '79f57c16-00fe-48da-87d4-5192e86cd047'
+    resource_group = 'alexanderopenai64'
+    workspace_name = 'AlexanderOpenAI64'
+    default_compute_target = "V100-32G"
+    ws = Workspace(subscription_id, resource_group, workspace_name)
+    ds = Datastore.get(ws, "babela100")
+    train_dataset = Dataset.File.from_files(path=[(ds, "github_data_fim/fim_megatron_github_dataset_300B/")], validate=True).as_mount()
+    vocab_dataset = Dataset.File.from_files(path=[( Datastore.get(ws, "workspaceblobstore"), "UI/2023-01-10_180934_UTC/")], validate=True).as_mount()
     # train_dataset = Dataset.File.from_files(path=[(ds, "github_data_fim/fim_megatron_github_dataset_all/")], validate=True).as_mount()   # for testing
-    # vocab_dataset = Dataset.File.from_files(path=[( Datastore.get(ws, "workspaceblobstore"), "UI/2023-01-10_180934_UTC/")], validate=True).as_mount()
 
     # forced_interactive_auth = InteractiveLoginAuthentication(tenant_id="72f988bfc-86f1-41af-91ab-2d7cd011db47", force=True)
     # ws = Workspace(subscription_id, resource_group, workspace_name, auth=forced_interactive_auth)
@@ -52,16 +52,16 @@ def main():
     
 
     
-    subscription_id = '9ec1d932-0f3f-486c-acc6-e7d78b358f9b'
-    resource_group = 'BabelReference'
-    workspace_name = 'BabelEUSReference'
-    default_compute_target = "A10080G"
-    ws = Workspace(subscription_id, resource_group, workspace_name)
-    ds = Datastore.get(ws, "babela100")
+    # subscription_id = '9ec1d932-0f3f-486c-acc6-e7d78b358f9b'
+    # resource_group = 'BabelReference'
+    # workspace_name = 'BabelEUSReference'
+    # default_compute_target = "A10080G"
+    # ws = Workspace(subscription_id, resource_group, workspace_name)
+    # ds = Datastore.get(ws, "babela100")
 
 
-    train_dataset = Dataset.File.from_files(path=[(ds, "github_data_fim/fim_megatron_github_dataset_300B/")], validate=True).as_mount()
-    vocab_dataset = Dataset.File.from_files(path=[( Datastore.get(ws, "workspaceblobstore"), "UI/2023-01-22_054438_UTC/")], validate=True).as_mount()
+    # train_dataset = Dataset.File.from_files(path=[(ds, "github_data_fim/fim_megatron_github_dataset_300B/")], validate=True).as_mount()
+    # vocab_dataset = Dataset.File.from_files(path=[( Datastore.get(ws, "workspaceblobstore"), "UI/2023-01-22_054438_UTC/")], validate=True).as_mount()
 
     # train_dataset = Dataset.File.from_files(path=[(ds, "github_data_fim/fim_megatron_github_dataset_all/")], validate=True).as_mount()   # for testing
     
@@ -69,7 +69,7 @@ def main():
     train_func = Component.from_yaml(
         ws,
         # yaml_file= Path(__file__).parent / "pretrain_gpt_moe.yaml"
-        yaml_file= Path(__file__).parent / "train_moe.yaml"
+        yaml_file= Path(__file__).parent / "train_h3.yaml"
         
     )
     
@@ -102,39 +102,57 @@ def main():
     # TRAIN_TOKENS=   300000000000
 
     # percent = 1
-    percent = 2
+    # percent = 2
     
-    TRAIN_TOKENS=   int((300000000000 * percent) / 3)
+    # TRAIN_TOKENS=   int((300000000000 * percent) / 3)
+
+    # LR_DECAY_TOKENS=TRAIN_TOKENS
+    # WARMUP_TOKENS= int((375000000 * percent) / 3)
+    # EVAL_INTERVAL=1000
+    # SAVE_INTERVAL=10000
+    # GLOBAL_BATCH_SIZE = 32
+
+    
+    # percent = .001
+    percent = 1
+    TRAIN_TOKENS=   int((300000000000 * percent) )
 
     LR_DECAY_TOKENS=TRAIN_TOKENS
-    WARMUP_TOKENS= int((375000000 * percent) / 3)
+    WARMUP_TOKENS= int((375000000 * percent) )
     EVAL_INTERVAL=1000
     SAVE_INTERVAL=10000
-    # GLOBAL_BATCH_SIZE = 32
 
     
     # LOAD_BASE_PATH = Dataset.get_by_name(ws, "dense_checkpoint_test")
     # LOAD_BASE_PATH = Dataset.get_by_name(ws, "dense_checkpoint")
 
-    LOAD_BASE_PATH = Dataset.File.from_files(path=[(ds, "github_data_fim/FIM_350M_FR_0.5_dense/")], validate=True).as_mount()
+    # LOAD_BASE_PATH = Dataset.File.from_files(path=[(ds, "github_data_fim/FIM_350M_FR_0.5_dense/")], validate=True).as_mount()
     # LOAD_BASE_TAG = "global_step200000"
     # LOAD_BASE_TAG = "global_step400000"  
     
-    LOAD_BASE_TAG = "global_step190000"
+    # LOAD_BASE_TAG = "global_step190000"
 
-    # load_base_version = "v5"
-    load_base_version = "v1"
+    LOAD_BASE_PATH=""
+    LOAD_BASE_TAG=""
 
-    MLC=1.0
-    
+    # H3_layers=""
+    # H3_layers="1,2,3,4,5,6,7,8,9,10,11,12"
+    H3_layers="1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24"
 
-    # EP_SIZE = 8
+
+    EP_SIZE = 1
     # instance_count = 1
-
-    EP_SIZE = 32
     instance_count = 8
 
-    GLOBAL_BATCH_SIZE = int(4 * instance_count* 8)
+    # EP_SIZE = 32
+    # instance_count = 8
+
+
+    # load_base_version = "v5"
+    load_base_version = ""
+    
+    BATCH_SIZE=1
+    GLOBAL_BATCH_SIZE = int(BATCH_SIZE * instance_count* 8)
 
 
     timestamp = datetime.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d-%H%M%S')
@@ -152,19 +170,13 @@ def main():
            
             vocab_dataset=vocab_dataset,
 
-            LOAD_BASE_PATH=LOAD_BASE_PATH,
-            LOAD_BASE_TAG=LOAD_BASE_TAG,
-
-            load_base_version=load_base_version,
-
             EP_SIZE=EP_SIZE,
 
 
             NUM_LAYERS=NUM_LAYERS,
             HIDDEN_SIZE=HIDDEN_SIZE,
             NUM_ATTN_HEADS=NUM_ATTN_HEADS,
-
-            MLC=MLC,
+            H3_layers=H3_layers,
 
             NUM_GPUS=8*instance_count,
 
@@ -177,6 +189,9 @@ def main():
 
             
             GLOBAL_BATCH_SIZE=GLOBAL_BATCH_SIZE,
+            BATCH_SIZE=BATCH_SIZE,
+
+            MLC=0.01,
 
         )
 

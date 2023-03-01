@@ -125,10 +125,10 @@ class SSKernel(nn.Module):
                 )
             elif mode == 'shift':
                 # Initializing B to be e_1
-                B = torch.zeros(self.H, self.N)
+                B = torch.zeros(self.H, self.N, dtype=dtype)
                 B[..., 0] = 1.0
                 # Match torch.Conv1d init
-                C = torch.randn(self.H, self.channels, self.N)
+                C = torch.randn(self.H, self.channels, self.N, dtype=dtype)
                 nn.init.kaiming_uniform_(C, a=math.sqrt(5))
                 C = rearrange(C, 'h c n -> c h n')
                 self.kernel = SSKernelShift(B, C, L=L, lr=lr, **kernel_args)
