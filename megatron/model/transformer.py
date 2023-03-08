@@ -17,6 +17,8 @@
 import math
 import torch
 import torch.nn.functional as F
+import random
+import numpy as np
 
 from megatron import get_args
 from megatron import mpu
@@ -31,7 +33,7 @@ import deepspeed
 from deepspeed.moe.layer import MoE
 from deepspeed.accelerator import get_accelerator
 
-from megatron.model.h3.ssm.h3 import H3
+from megatron.model.moe.layer import CustomMoE
 
 # flags required to enable jit fusion kernels
 torch._C._jit_set_profiling_mode(False)
@@ -122,6 +124,10 @@ class ParallelH3(MegatronModule):
 
     def __init__(self, output_layer_init_method, layer_number):
         super(ParallelH3, self).__init__()
+
+        from megatron.model.h3.ssm.h3 import H3
+
+
         args = get_args()
         self.fp16 = args.fp16
         self.bf16 = args.bf16
@@ -503,7 +509,14 @@ class ParallelTransformerLayer(MegatronModule):
                                output_layer_init_method)
         else:
             enable_expert_tensor_parallelism = args.enable_expert_tensor_parallelism
-            self.mlp = MoE(args.hidden_size,
+
+            moe_cls = MoE
+
+            if args.load_base_version == "v7":
+                print("using custom MoE with load base version v7")
+                moe_cls = CustomMoE
+
+            self.mlp = moe_cls(args.hidden_size,
                             ParallelMLP(init_method,
                                 output_layer_init_method=output_layer_init_method,
                                 moe=True,
@@ -962,13 +975,23 @@ class ParallelTransformer(MegatronModule):
 
 
                     for param_name, param in new_state_dict.items():
+                        if not len(param.shape) > 1: continue # skip the gate
+
                         with torch.no_grad():
                             # weights are shape output, input
                             print("weight shape", param.shape)
 
                             print(f"{param_name} before zero:", (param == 0).sum())
-                            orig_dtype = param.dtype
-                            param[:] = torch.nn.functional.dropout2d(param.unsqueeze(0).float(), p=.2).squeeze(0).to(orig_dtype)
+                            # orig_dtype = param.dtype
+                            # param[:] = torch.nn.functional.dropout2d(param.unsqueeze(0).float(), p=.2).squeeze(0).to(orig_dtype)
+
+                            N = param.shape[0]
+                            
+                            inds = np.arange(N)
+                            M = int(N * .2 )  
+                            inds = np.random.choice(inds, M, replace=False) 
+                            param[inds, ...] = 0.0
+
                             print(f"{param_name} after zero:", (param == 0).sum())
 
                 elif version == "v4":
@@ -986,6 +1009,9 @@ class ParallelTransformer(MegatronModule):
 
                     print("using v6 - check above logs, should initialize gate with 0s")
 
+                elif version == "v7":
+
+                    print("using v7 - check above logs, should be using custom moe class....")
 
                 else:
                     print("unknown version", version)

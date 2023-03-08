@@ -33,9 +33,11 @@ def main():
     # default_compute_target = "V100-32G"
     # ws = Workspace(subscription_id, resource_group, workspace_name)
     # ds = Datastore.get(ws, "babela100")
+    # vocab_dataset = Dataset.File.from_files(path=[( Datastore.get(ws, "workspaceblobstore"), "UI/2023-01-10_180934_UTC/")], validate=True).as_mount()
+
+
     # train_dataset = Dataset.File.from_files(path=[(ds, "github_data_fim/fim_megatron_github_dataset_300B/")], validate=True).as_mount()
     # train_dataset = Dataset.File.from_files(path=[(ds, "github_data_fim/fim_megatron_github_dataset_all/")], validate=True).as_mount()   # for testing
-    # vocab_dataset = Dataset.File.from_files(path=[( Datastore.get(ws, "workspaceblobstore"), "UI/2023-01-10_180934_UTC/")], validate=True).as_mount()
 
     # forced_interactive_auth = InteractiveLoginAuthentication(tenant_id="72f988bfc-86f1-41af-91ab-2d7cd011db47", force=True)
     # ws = Workspace(subscription_id, resource_group, workspace_name, auth=forced_interactive_auth)
@@ -58,10 +60,10 @@ def main():
     default_compute_target = "A10080G"
     ws = Workspace(subscription_id, resource_group, workspace_name)
     ds = Datastore.get(ws, "babela100")
+    vocab_dataset = Dataset.File.from_files(path=[( Datastore.get(ws, "workspaceblobstore"), "UI/2023-01-22_054438_UTC/")], validate=True).as_mount()
 
 
     train_dataset = Dataset.File.from_files(path=[(ds, "github_data_fim/fim_megatron_github_dataset_300B/")], validate=True).as_mount()
-    vocab_dataset = Dataset.File.from_files(path=[( Datastore.get(ws, "workspaceblobstore"), "UI/2023-01-22_054438_UTC/")], validate=True).as_mount()
 
     # train_dataset = Dataset.File.from_files(path=[(ds, "github_data_fim/fim_megatron_github_dataset_all/")], validate=True).as_mount()   # for testing
     
@@ -103,8 +105,10 @@ def main():
 
     # percent = 1
     percent = 2
-    
     TRAIN_TOKENS=   int((300000000000 * percent) / 3)
+
+    # percent = 3
+    # TRAIN_TOKENS=   int((300000000000 * percent) / 3)
 
     LR_DECAY_TOKENS=TRAIN_TOKENS
     WARMUP_TOKENS= int((375000000 * percent) / 3)
@@ -115,24 +119,42 @@ def main():
     
     # LOAD_BASE_PATH = Dataset.get_by_name(ws, "dense_checkpoint_test")
     # LOAD_BASE_PATH = Dataset.get_by_name(ws, "dense_checkpoint")
-
-    LOAD_BASE_PATH = Dataset.File.from_files(path=[(ds, "github_data_fim/FIM_350M_FR_0.5_dense/")], validate=True).as_mount()
     # LOAD_BASE_TAG = "global_step200000"
     # LOAD_BASE_TAG = "global_step400000"  
-    
+
+
+
+    LOAD_BASE_PATH = Dataset.File.from_files(path=[(ds, "github_data_fim/FIM_350M_FR_0.5_dense/")], validate=True).as_mount()
+    # 100B tokens
     LOAD_BASE_TAG = "global_step190000"
 
     # load_base_version = "v5"
-    load_base_version = "v1"
+    # load_base_version = "v1"
+    # load_base_version = "v3"
+    # load_base_version = "v2"
+    
+    # load_base_version = "v6"
+    
+    load_base_version = "v7"
 
-    MLC=1.0
+    # LOAD_BASE_TAG = ""
+    # LOAD_BASE_PATH = None
+    # load_base_version = ""
+
+
+    # MLC=1.0
+    # MLC=0.01
+    MLC=0.1
+    # MLC=0
     
 
     # EP_SIZE = 8
+    # EP_SIZE = 2
     # instance_count = 1
 
     EP_SIZE = 32
     instance_count = 8
+    # instance_count = 1
 
     GLOBAL_BATCH_SIZE = int(4 * instance_count* 8)
 
@@ -140,7 +162,7 @@ def main():
     timestamp = datetime.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d-%H%M%S')
     output_path = f'github_moe_pretrain_misantac/logs-{timestamp}'
     @dsl.pipeline(
-        name=f"{timestamp} megatron load_base={load_base_version} EP_SIZE={EP_SIZE} ",
+        name=f"{timestamp} megatron EP_SIZE={EP_SIZE} load_base={load_base_version} MLC={MLC}",
         default_compute_target=default_compute_target,
         # default_compute_target="d15",
 

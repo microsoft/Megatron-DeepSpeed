@@ -7,12 +7,15 @@ import torch
 from deepspeed.utils import log_dist
 
 from deepspeed.utils import groups
-from .sharded_moe import MOELayer, TopKGate
-from .experts import Experts
+from megatron.model.moe.sharded_moe import MOELayer, TopKGate
+from megatron.model.moe.experts import Experts
 import typing
 
 
-class MoE(torch.nn.Module):
+from deepspeed.moe.layer import MoE
+
+
+class CustomMoE(MoE):
     """Initialize an MoE layer.
 
     Arguments:
@@ -47,7 +50,22 @@ class MoE(torch.nn.Module):
                  use_tutel: bool = False,
                  enable_expert_tensor_parallelism: bool = False):
 
-        super(MoE, self).__init__()
+        super(CustomMoE, self).__init__(
+                 hidden_size,
+                 expert,
+                 num_experts=num_experts,
+                 ep_size=ep_size,
+                 k=k,
+                 capacity_factor=capacity_factor,
+                 eval_capacity_factor=eval_capacity_factor,
+                 min_capacity=min_capacity,
+                 use_residual=use_residual,
+                 noisy_gate_policy=noisy_gate_policy,
+                 drop_tokens=drop_tokens,
+                 use_rts=use_rts,
+                 use_tutel=use_tutel,
+                 enable_expert_tensor_parallelism=enable_expert_tensor_parallelism)
+        # '''
 
         self.use_residual = use_residual
         self.enable_expert_tensor_parallelism = enable_expert_tensor_parallelism
@@ -83,51 +101,4 @@ class MoE(torch.nn.Module):
             self.mlp = expert
             # coefficient is used for weighted sum of the output of expert and mlp
             self.coefficient = torch.nn.Linear(hidden_size, 2)
-
-    def set_deepspeed_parallelism(self):
-        self._create_process_groups()
-
-    def _create_process_groups(self):
-        # Create process group for a layer if needed
-        if self.expert_group_name not in groups._get_expert_parallel_group_dict():
-            print(
-                f"No existing process group found, creating a new group named: {self.expert_group_name}"
-            )
-            if (groups.mpu is None) or (not self.enable_expert_tensor_parallelism):
-                # Condition 1 - no groups.mpu means no tensor parallelism
-                # Condition 2 - disabling expert tensor parallelism on purpose
-                groups._create_expert_and_data_parallel(self.ep_size)
-            else:
-                # expert tensor parallelism is enabled
-                groups._create_expert_data_and_model_parallel(self.ep_size,
-                                                              mpu=groups.mpu)
-        # Set the group handle for the MOELayer (deepspeed_moe) object
-        self.deepspeed_moe._set_ep_group(
-            groups._get_expert_parallel_group(self.expert_group_name))
-
-    def forward(self, hidden_states, used_token=None):
-        """ MoE forward
-
-        Arguments:
-            hidden_states (Tensor): input to the layer
-            used_token (Tensor, optional): default: None, mask only used tokens
-
-        Returns:
-            A tuple including output, gate loss, and expert count.
-
-            * output (Tensor): output of the model
-
-            * l_aux (Tensor): gate loss value
-
-            * exp_counts (int): expert count
-        """
-        output = self.deepspeed_moe(hidden_states, used_token)
-        if self.use_residual:
-            # Residual MoE
-            output_mlp = self.mlp(hidden_states)
-            if type(output_mlp) is tuple:
-                output_mlp = output_mlp[0]  # Ignore the bias term for now
-            coef = self.coefficient(hidden_states)
-            coef = torch.nn.functional.softmax(coef, dim=-1)
-            output = output * coef[..., 0:1] + output_mlp * coef[..., 1:]
-        return output, self.deepspeed_moe.l_aux, self.deepspeed_moe.exp_counts
+        # '''

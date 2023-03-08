@@ -21,7 +21,7 @@ from torch import Tensor
 from torch.nn import Module
 import torch.nn.functional as F
 from deepspeed.utils import groups
-from .mappings import drop_tokens, gather_tokens
+from megatron.model.moe.mappings import drop_tokens, gather_tokens
 
 
 from megatron import get_args
@@ -271,7 +271,14 @@ def top1gating(logits: Tensor,
     gates = gates * mask1_float
 
     locations1_sc = _one_hot_to_float(locations1_s, capacity)
-    combine_weights = einsum("se,sc->sec", gates, locations1_sc)
+
+    # combine_weights = einsum("se,sc->sec", gates, locations1_sc)
+    
+    # don't multiply expert output by gate - router is only learned through lbl...
+    # combine_weights = einsum("se,sc->sec", mask1_float + gates*.01, locations1_sc)
+    combine_weights = einsum("se,sc->sec", mask1_float, locations1_sc)
+    # print("misantac debug I am here in this location")
+
 
     dispatch_mask = combine_weights.bool()
 

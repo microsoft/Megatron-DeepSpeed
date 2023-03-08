@@ -1,6 +1,6 @@
 from typing import List, Tuple, Dict
 import torch
-from .layer import MoE
+from megatron.model.moe.layer import MoE
 
 
 def has_moe_layers(m):

@@ -137,11 +137,6 @@ inputs:
     optional: true
     default: ""
     type: string
-  H3_layers:
-    description: H3 layers
-    optional: true
-    default: ""
-    type: string
 
 
 
@@ -188,7 +183,6 @@ launcher:
       [--LOAD_BASE_PATH {inputs.LOAD_BASE_PATH}]
       [--load_base_version {inputs.load_base_version}]
       [--LOAD_BASE_TAG {inputs.LOAD_BASE_TAG}]
-      [--H3_layers {inputs.H3_layers}]
 
 
 tags: 
