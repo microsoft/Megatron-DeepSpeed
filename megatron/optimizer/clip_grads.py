@@ -16,7 +16,7 @@
 """Gradient clipping."""
 
 import torch
-from torch._six import inf
+from torch import inf
 from deepspeed.accelerator import get_accelerator
 
 if get_accelerator().device_name() == 'cuda':
