@@ -21,6 +21,7 @@ from megatron.global_vars import set_global_variables
 from megatron.model.transformer import bias_dropout_add_fused_train
 from megatron.model.fused_bias_gelu import bias_gelu
 
+import deepspeed
 
 def initialize_megatron(extra_args_provider=None, args_defaults={},
                         ignore_unknown_args=False, allow_no_cuda=False):
@@ -74,6 +75,9 @@ def initialize_megatron(extra_args_provider=None, args_defaults={},
     else:
         # Megatron's MPU is the master. Complete initialization right away.
         finish_mpu_init()
+
+        # Initialize memory buffers.
+        _initialize_mem_buffs()
 
         # Autoresume.
         _init_autoresume()
@@ -143,6 +147,36 @@ def _compile_dependencies():
                   time.time() - start_time), flush=True)
 
 
+def setup_deepspeed_random_and_activation_checkpointing(args):
+    '''Optional DeepSpeed Activation Checkpointing features.
+    Gives access to partition activations, contiguous memory optimizations
+    and cpu checkpointing.
+    Activation checkpoint requires keep track of the random states
+    and setting the random seed for each MP process. Megatron uses
+    mpu.get_cuda_rng_tracker and mpu.model_parallel_cuda_manual_seed
+    for keeping track of the random states and setting the random seeds.
+    Since they are used in places outside of activation checkpointing,
+    we overwrite them to maintain consistency.
+    This must be called before all the calls to mpu.model_parallel_cuda_manual_seed
+    '''
+    num_layers = args.num_layers // args.checkpoint_num_layers
+    num_layers = num_layers if args.num_layers % args.checkpoint_num_layers == 0 else num_layers + 1
+    if args.split_transformers:
+        num_layers *= 2
+
+    deepspeed.checkpointing.configure(
+        mpu,
+        partition_activations=args.partition_activations,
+        contiguous_checkpointing=args.contigious_checkpointing,
+        num_checkpoints=num_layers,
+        checkpoint_in_cpu=args.checkpoint_in_cpu,
+        synchronize=args.synchronize_each_layer,
+        profile=args.profile_backward)
+
+    mpu.checkpoint = deepspeed.checkpointing.checkpoint
+    mpu.get_cuda_rng_tracker = deepspeed.checkpointing.get_cuda_rng_tracker
+    mpu.model_parallel_cuda_manual_seed = deepspeed.checkpointing.model_parallel_cuda_manual_seed
+
 
 def _initialize_distributed():
     """Initialize torch.distributed and core model parallel."""
@@ -170,11 +204,20 @@ def _initialize_distributed():
             else:
                 args.local_rank = device
             torch.cuda.set_device(device)
-    # Call the init process
-    torch.distributed.init_process_group(
-        backend=args.distributed_backend,
-        world_size=args.world_size, rank=args.rank,
-        timeout=timedelta(minutes=args.distributed_timeout_minutes))
+
+        # Call the init process
+        init_method = 'tcp://'
+        master_ip = os.getenv('MASTER_ADDR', 'localhost')
+        master_port = os.getenv('MASTER_PORT', '6000')
+        init_method += master_ip + ':' + master_port
+        if args.deepspeed or args.ds_inference:
+            deepspeed.init_distributed()
+        else:
+            torch.distributed.init_process_group(
+                backend=args.distributed_backend,
+                world_size=args.world_size, rank=args.rank,
+                init_method=init_method,
+                timeout=timedelta(minutes=args.distributed_timeout_minutes))
 
     # Set the tensor model-parallel, pipeline model-parallel, and
     # data-parallel communicators.
@@ -191,6 +234,9 @@ def _initialize_distributed():
                       f'{mpu.get_tensor_model_parallel_world_size()}')
                 print(f'> initialized pipeline model parallel with size '
                       f'{mpu.get_pipeline_model_parallel_world_size()}')
+
+    if args.deepspeed and args.deepspeed_activation_checkpointing:
+        setup_deepspeed_random_and_activation_checkpointing(args)
 
 
 def _init_autoresume():
@@ -227,6 +273,14 @@ def write_args_to_tensorboard():
         for arg in vars(args):
             writer.add_text(arg, str(getattr(args, arg)),
                             global_step=args.iteration)
+
+
+def _initialize_mem_buffs():
+    """Initialize manually allocated static memory."""
+    args = get_args()
+    # Initialize memory for checkpointed activations.
+    if args.distribute_checkpointed_activations:
+        tensor_parallel.init_checkpointed_activations_memory_buffer()
 
 
 def set_jit_fusion_options():

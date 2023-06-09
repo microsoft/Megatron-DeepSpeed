@@ -64,6 +64,7 @@ def get_megatron_optimizer(model,
                            no_weight_decay_cond=None,
                            scale_lr_cond=None,
                            lr_mult=1.0):
+    import torch
     args = get_args()
 
     # Base optimizer.
@@ -72,20 +73,35 @@ def get_megatron_optimizer(model,
                                     scale_lr_cond,
                                     lr_mult)
 
-    if args.optimizer == 'adam':
-        optimizer = Adam(param_groups,
-                         lr=args.lr,
-                         weight_decay=args.weight_decay,
-                         betas=(args.adam_beta1, args.adam_beta2),
-                         eps=args.adam_eps)
-    elif args.optimizer == 'sgd':
-        optimizer = SGD(param_groups,
-                        lr=args.lr,
-                        weight_decay=args.weight_decay,
-                        momentum=args.sgd_momentum)
-    else:
-        raise Exception('{} optimizer is not supported.'.format(
-            args.optimizer))
+    if args.create_moe_param_group:
+        from deepspeed.moe.utils import split_params_into_different_moe_groups_for_optimizer
+        param_groups = split_params_into_different_moe_groups_for_optimizer(param_groups)
+
+    # if args.optimizer == 'adam':
+    #     optimizer = Adam(param_groups,
+    #                     lr=args.lr,
+    #                     weight_decay=args.weight_decay,
+    #                     betas=(args.adam_beta1, args.adam_beta2),
+    #                     eps=args.adam_eps)
+    # elif args.optimizer == 'sgd':
+    #     optimizer = SGD(param_groups,
+    #                     lr=args.lr,
+    #                     weight_decay=args.weight_decay,
+    #                     momentum=args.sgd_momentum)
+    # else:
+    #     raise Exception('{} optimizer is not supported.'.format(
+    #         args.optimizer))
+
+    optimizer = torch.optim.AdamW(
+        param_groups,
+        lr=args.lr,
+        weight_decay=args.weight_decay,
+        betas=(args.adam_beta1, args.adam_beta2),
+        eps=args.adam_eps
+    )
+
+    if args.deepspeed:
+        return optimizer
 
     # Determine whether the params have main-grad field.
     params_have_main_grad = False

@@ -53,7 +53,7 @@ def get_language_model(num_tokentypes, add_pooler,
                        scaled_init_method=None, add_encoder=True,
                        add_decoder=False,
                        decoder_attn_mask_type=AttnMaskType.causal,
-                       pre_process=True, post_process=True):
+                       pre_process=True, post_process=True, num_experts=[1]):
     """Build language model and return along with the key to save."""
     args = get_args()
 
@@ -75,7 +75,8 @@ def get_language_model(num_tokentypes, add_pooler,
         decoder_attn_mask_type=decoder_attn_mask_type,
         add_pooler=add_pooler,
         pre_process=pre_process,
-        post_process=post_process
+        post_process=post_process,
+        num_experts=num_experts
     )
     # key used for checkpoints.
     language_model_key = 'language_model'
@@ -324,6 +325,39 @@ class Embedding(MegatronModule):
                       'checkpoint but could not find it', flush=True)
 
 
+class EmbeddingPipe(Embedding):
+
+    def forward(self, inputs, **kwargs):
+        if not hasattr(self, '_args'):
+            self._args = get_args()
+
+        input_ids = inputs[0]
+        position_ids = inputs[1]
+        if hasattr(self._args, 'attn_mask'):
+            attention_mask = None
+        else:
+            attention_mask = inputs[2]
+
+        if len(inputs) == 4:
+            tokentype_ids = inputs[3]
+        else:
+            tokentype_ids = None
+        
+        embeddings = super().forward(input_ids, position_ids, tokentype_ids=tokentype_ids)
+
+        # If cmd args has attn_mask, we don't forward it as an activation.
+        if hasattr(self._args, 'attn_mask'):
+            return embeddings
+        else:
+            assert False
+            return embeddings, attention_mask
+
+    @property
+    def word_embeddings_weight(self):
+        """Easy accessory for the DeepSpeed pipeline engine to tie embeddings across stages."""
+        return self.word_embeddings.weight
+
+
 class TransformerLanguageModel(MegatronModule):
     """Transformer language model.
 
@@ -347,7 +381,8 @@ class TransformerLanguageModel(MegatronModule):
                  decoder_attn_mask_type=AttnMaskType.causal,
                  add_pooler=False,
                  pre_process=True,
-                 post_process=True):
+                 post_process=True,
+                 num_experts=[1]):
         args = get_args()
         # TODO: passing share_word_embeddings=False will not work correctly for T5 and embeddings will not be synced. Fix later for T5.
         if args.untie_embeddings_and_output_weights: assert not add_decoder
@@ -366,6 +401,7 @@ class TransformerLanguageModel(MegatronModule):
         self.encoder_hidden_state = None
         self.add_retriever = args.retro_add_retriever
         self.untie_embeddings_and_output_weights = args.untie_embeddings_and_output_weights
+        self.num_experts = num_experts
 
         # Embeddings.
         if self.pre_process:
@@ -420,7 +456,8 @@ class TransformerLanguageModel(MegatronModule):
                 layer_type=LayerType.decoder,
                 self_attn_mask_type=self.decoder_attn_mask_type,
                 pre_process=self.pre_process,
-                post_process=self.post_process)
+                post_process=self.post_process,
+                num_experts=self.num_experts)
             self._decoder_key = 'decoder'
         else:
             self.decoder = None
@@ -506,7 +543,7 @@ class TransformerLanguageModel(MegatronModule):
         # Run encoder.
         if enc_hidden_states is None:
             if self.encoder is not None:
-                encoder_output = self.encoder(
+                encoder_output, *moe_losses = self.encoder(
                     encoder_input,
                     enc_attn_mask,
                     retriever_input=retriever_input,
@@ -517,6 +554,7 @@ class TransformerLanguageModel(MegatronModule):
                 encoder_output = self.encoder_hidden_state
         else:
             encoder_output = enc_hidden_states.to(encoder_input.dtype)
+            moe_losses = []
 
         if self.post_process:
             if self.add_pooler:
@@ -528,9 +566,9 @@ class TransformerLanguageModel(MegatronModule):
         # similarity between two sequences by average pooling
         if not self.add_decoder or output_enc_hidden:
             if self.add_pooler and self.post_process:
-                return encoder_output, pooled_output
+                return (encoder_output, pooled_output, *moe_losses)
             else:
-                return encoder_output
+                return (encoder_output, *moe_losses)
 
         # Decoder embedding.
         if self.pre_process:
@@ -540,7 +578,7 @@ class TransformerLanguageModel(MegatronModule):
             decoder_input = None
 
         # Run decoder.
-        decoder_output = self.decoder(
+        decoder_output, *moe_losses = self.decoder(
             decoder_input,
             dec_attn_mask,
             encoder_output=encoder_output,
@@ -549,36 +587,53 @@ class TransformerLanguageModel(MegatronModule):
             rotary_pos_emb=rotary_pos_emb)
 
         if self.add_pooler and self.post_process:
-            return decoder_output, encoder_output, pooled_output
+            return (decoder_output, encoder_output, pooled_output, *moe_losses)
         else:
-            return decoder_output, encoder_output
+            return (decoder_output, encoder_output, *moe_losses)
 
     def state_dict_for_save_checkpoint(self, prefix='', keep_vars=False):
         """For easy load."""
 
+        args = get_args()
         state_dict_ = {}
+        moe_state_dict = {}
         if self.pre_process:
             state_dict_[self._embedding_key] \
                 = self.embedding.state_dict_for_save_checkpoint(prefix=prefix,
                                                                 keep_vars=keep_vars)
+        encoder_state_dict = self.encoder.state_dict_for_save_checkpoint(prefix, keep_vars)
+        if args.random_ltd:
+            # When using random-LTD, it is required to call remove_random_ltd_state_dict
+            # during model checkpoint saving to transfer the random-LTD-wrapped
+            # layers back to original layers. This will help to remove the dependency
+            # to random-LTD inside the checkpoint, so that during evaluation or
+            # finetuning of the checkpoint there is no need to depend on random-LTD
+            # again.
+            from deepspeed.runtime.data_pipeline.data_routing.helper import remove_random_ltd_state_dict
+            encoder_state_dict = remove_random_ltd_state_dict(encoder_state_dict)
+        # MoE states need to be handled separately by DeepSpeed engine, thus
+        # moving them to the top level dictionary
+        # If components other than encoder may contain MoE states, need to add
+        # the same logic
+        for key in list(encoder_state_dict.keys()):
+            if 'expert' in key and 'moe.gate.wg.weight' not in key:
+                moe_state_dict[self._encoder_key+key] = encoder_state_dict.pop(key)
+        state_dict_[self._encoder_key] = encoder_state_dict
         if self.add_encoder:
             state_dict_[self._encoder_key] \
-                = self.encoder.state_dict_for_save_checkpoint(prefix=prefix,
-                                                              keep_vars=keep_vars)
+                = self.encoder.state_dict_for_save_checkpoint(prefix=prefix, keep_vars=keep_vars)
         if self.post_process:
             if self.add_pooler:
                 state_dict_[self._pooler_key] \
-                    = self.pooler.state_dict_for_save_checkpoint(prefix=prefix,
-                                                                 keep_vars=keep_vars)
+                    = self.pooler.state_dict_for_save_checkpoint(prefix=prefix, keep_vars=keep_vars)
             if self.untie_embeddings_and_output_weights:
                 state_dict_[self._output_layer_key] \
                     = self.output_layer.state_dict(prefix=prefix, keep_vars=keep_vars)
 
         if self.add_decoder:
             state_dict_[self._decoder_key] \
-                = self.decoder.state_dict_for_save_checkpoint(prefix=prefix,
-                                                              keep_vars=keep_vars)
-
+                = self.decoder.state_dict_for_save_checkpoint(prefix=prefix, keep_vars=keep_vars)
+        state_dict_["moe_state_dict"] = moe_state_dict
         return state_dict_
 
     def load_state_dict(self, state_dict, strict=True):
@@ -620,6 +675,18 @@ class TransformerLanguageModel(MegatronModule):
                     state_dict_self_attention[key] = state_dict_[key]
             state_dict_ = state_dict_self_attention
 
+            # Gather encoder MoE states
+            if "moe_state_dict" in state_dict:
+                for key in list(state_dict["moe_state_dict"].keys()):
+                    if self._encoder_key in key:
+                        key_list = key.split('.')
+                        while key_list[0] != 'encoder':
+                            key_list.pop(0)
+                        key_list.pop(0)
+                        actual_key = '.'.join(key_list)
+                        state_dict_[actual_key] = state_dict["moe_state_dict"].pop(key)
+                if len(state_dict["moe_state_dict"]) == 0:
+                    del state_dict["moe_state_dict"]
             self.encoder.load_state_dict(state_dict_, strict=strict)
 
         # Pooler.

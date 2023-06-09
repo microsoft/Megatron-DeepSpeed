@@ -18,6 +18,9 @@ from megatron.model.fused_softmax import FusedScaleMaskSoftmax
 from megatron.model.fused_bias_gelu import bias_gelu_impl
 from megatron.model.rotary_pos_embedding import apply_rotary_pos_emb
 from megatron.model.utils import attention_mask_func, openai_gelu, erf_gelu
+import deepspeed
+from deepspeed.moe.layer import MoE
+from deepspeed.accelerator import get_accelerator
 
 try:
     from einops import rearrange
@@ -87,7 +90,7 @@ class ParallelMLP(MegatronModule):
     state back into h hidden dimension.
     """
 
-    def __init__(self, init_method, output_layer_init_method):
+    def __init__(self, init_method, output_layer_init_method, moe=False, enable_expert_tensor_parallelism=False):
         super(ParallelMLP, self).__init__()
         args = get_args()
 
@@ -102,6 +105,8 @@ class ParallelMLP(MegatronModule):
             init_method=init_method,
             skip_bias_add=True,
             async_tensor_model_parallel_allreduce=args.async_tensor_model_parallel_allreduce,
+            moe=moe,
+            enable_expert_tensor_parallelism=enable_expert_tensor_parallelism,
             **_args_to_kwargs())
 
         self.bias_gelu_fusion = False
@@ -133,6 +138,8 @@ class ParallelMLP(MegatronModule):
             input_is_parallel=True,
             init_method=output_layer_init_method,
             skip_bias_add=True,
+            moe=moe,
+            enable_expert_tensor_parallelism=enable_expert_tensor_parallelism,
             **_args_to_kwargs())
 
     def forward(self, hidden_states):
@@ -141,8 +148,8 @@ class ParallelMLP(MegatronModule):
         intermediate_parallel, bias_parallel = self.dense_h_to_4h(hidden_states)
 
         if self.bias_gelu_fusion:
-            assert self.add_bias is True
-            assert self.activation_func == F.gelu
+            # assert self.add_bias is True
+            # assert self.activation_func == F.gelu, f'activation_func is {self.activation_func}'
             intermediate_parallel = bias_gelu_impl(intermediate_parallel, bias_parallel)
         else:
             if bias_parallel is not None:
@@ -160,9 +167,9 @@ class SwitchMLP(MegatronModule):
     def __init__(self, init_method, output_layer_init_method):
         super(SwitchMLP, self).__init__()
         args = get_args()
-        self.router = torch.nn.Linear(args.hidden_size, args.num_experts)
+        self.router = torch.nn.Linear(args.hidden_size, args.num_experts_switch)
         self.experts = torch.nn.ModuleList()
-        for i in range(args.num_experts):
+        for i in range(args.num_experts_switch):
             self.experts.append(ParallelMLP(init_method, output_layer_init_method))
 
     def forward(self, hidden_states):
@@ -491,6 +498,11 @@ class ParallelAttention(MegatronModule):
             skip_bias_add=True,
             **_args_to_kwargs())
 
+        if deepspeed.checkpointing.is_configured():
+            global get_cuda_rng_tracker, checkpoint
+            get_cuda_rng_tracker = deepspeed.checkpointing.get_cuda_rng_tracker
+            checkpoint = deepspeed.checkpointing.checkpoint
+
     def _checkpointed_attention_forward(self, query_layer, key_layer,
                                         value_layer, attention_mask,
                                         rotary_pos_emb=None):
@@ -521,7 +533,7 @@ class ParallelAttention(MegatronModule):
             self.num_attention_heads_per_partition,
             self.hidden_size_per_attention_head,
             dtype=self.params_dtype,
-            device=torch.cuda.current_device())
+            device=get_accelerator().current_device_name())
 
     def forward(self, hidden_states, attention_mask,
                 encoder_output=None, inference_params=None,
@@ -718,7 +730,7 @@ class ParallelTransformerLayer(MegatronModule):
     def __init__(self, init_method, output_layer_init_method,
                  layer_number, layer_type=LayerType.encoder,
                  self_attn_mask_type=AttnMaskType.padding,
-                 drop_path_rate=0.):
+                 drop_path_rate=0., num_experts=1):
                  # retriever=None):
         args = get_args()
 
@@ -778,10 +790,28 @@ class ParallelTransformerLayer(MegatronModule):
                 apply_layernorm_1p=args.apply_layernorm_1p)
 
         # MLP
-        if args.num_experts is not None:
+        self.num_experts = num_experts
+        if args.num_experts_switch is not None:
             self.mlp = SwitchMLP(init_method, output_layer_init_method)
         else:
-            self.mlp = ParallelMLP(init_method, output_layer_init_method)
+            if self.num_experts <= 1:
+                self.mlp = ParallelMLP(init_method, output_layer_init_method)
+            else:
+                enable_expert_tensor_parallelism = args.enable_expert_tensor_parallelism
+                self.mlp = MoE(args.hidden_size,
+                                ParallelMLP(init_method,
+                                    output_layer_init_method=output_layer_init_method,
+                                    moe=True,
+                                    enable_expert_tensor_parallelism=enable_expert_tensor_parallelism),
+                                num_experts=self.num_experts, 
+                                ep_size=args.moe_expert_parallel_size,
+                                k=args.topk,
+                                use_residual=(args.mlp_type == 'residual'),
+                                capacity_factor=args.moe_train_capacity_factor,
+                                eval_capacity_factor=args.moe_eval_capacity_factor,
+                                min_capacity=args.moe_min_capacity,
+                                drop_tokens=args.moe_token_dropping, use_tutel=args.use_tutel,
+                                enable_expert_tensor_parallelism=enable_expert_tensor_parallelism) 
 
         # Set bias+dropout+add fusion grad_enable execution handler.
         TORCH_MAJOR = int(torch.__version__.split('.')[0])
@@ -1108,7 +1138,13 @@ class ParallelTransformerLayer(MegatronModule):
                             self.layer_type.name)
 
         # MLP.
-        mlp_output, mlp_bias = self.mlp(layernorm_output)
+        moe_loss = torch.tensor(0.0, device=layernorm_output.device, dtype=layernorm_output.dtype)
+        mlp_bias = torch.tensor(0.0, device=layernorm_output.device, dtype=layernorm_output.dtype)
+
+        if self.num_experts == 1:
+            mlp_output, mlp_bias = self.mlp(layernorm_output)
+        else:
+            mlp_output, moe_loss, _ = self.mlp(layernorm_output)
 
         # Second residual connection.
         if self.apply_residual_connection_post_layernorm:
@@ -1145,9 +1181,49 @@ class ParallelTransformerLayer(MegatronModule):
             output = residual + self.drop_path(out)
 
         if self.layer_type == LayerType.retro_decoder_with_retriever:
-            return output, retriever_output
+            return output, retriever_output, moe_loss
         else:
-            return output
+            return output, moe_loss
+
+
+class ParallelTransformerLayerPipe(ParallelTransformerLayer):
+    """Extends ParallelTransformerLayer to forward attention_mask through the pipeline.
+
+    Forward has two usages that affect attention mask communication:
+
+    1) forward((input, attn_mask) , **kwargs) -> (output, mask)
+       When the attention mask is provided as the second positional
+       argument, typical pipeline behavior is used and both the output
+       *and* mask are returned in a tuple. This tuple is then forwarded
+       to the next stage in the pipeline.
+
+       This version is useful if masks are dynamic.
+
+    2) forward(input, **kwargs) -> output
+       When the mask is static over all samples, it is advantageous to
+       cache the mask and avoid communicating it.
+
+       If no mask is provided, the module will query `self._args.attn_mask`
+       for the mask and only return `super().forward(...)`
+    """
+    def forward(self, inputs, **kwargs):
+        assert torch.is_tensor(inputs) or isinstance(inputs, tuple)
+        if torch.is_tensor(inputs) or len(inputs) == 1:
+            # No attention mask forwarded, search for args.attn_mask
+            if not hasattr(self, '_args'):
+                self._args = get_args()
+            hidden_states, attention_mask = inputs, self._args.attn_mask
+            # HACK: currently MoE model does not support pipeline parallel, so
+            # here we just ignore the moe_loss returned by forward()
+            return super().forward(hidden_states, attention_mask, **kwargs)[0]
+        elif len(inputs) == 2:
+            # Attention mask is an activation.
+            hidden_states, attention_mask = inputs[0], inputs[1]
+            # HACK: currently MoE model does not support pipeline parallel, so
+            # here we just ignore the moe_loss returned by forward()
+            return super().forward(*inputs, **kwargs)[0], attention_mask
+        else:
+            raise RuntimeError('Received more inputs than understood.')
 
 
 class NoopTransformerLayer(MegatronModule):
@@ -1256,7 +1332,7 @@ class ParallelTransformer(MegatronModule):
                  post_layer_norm=True,
                  pre_process=True,
                  post_process=True,
-                 drop_path_rate=0.0):
+                 drop_path_rate=0.0, num_experts=[1]):
         super(ParallelTransformer, self).__init__()
         args = get_args()
 
@@ -1271,8 +1347,11 @@ class ParallelTransformer(MegatronModule):
         self.drop_path_rate = drop_path_rate
         self.transformer_impl = args.transformer_impl
         self.retro_add_retriever = args.retro_add_retriever
+        self.ds_inference = args.ds_inference
 
         # Store activation checkpoiting flag.
+        self.checkpoint_activations = args.checkpoint_activations
+        self.checkpoint_num_layers = args.checkpoint_num_layers
         self.recompute_granularity = args.recompute_granularity
         self.recompute_method = args.recompute_method
         self.recompute_num_layers = args.recompute_num_layers
@@ -1339,7 +1418,7 @@ class ParallelTransformer(MegatronModule):
                 "Full recompute not supported for Retro."
             assert args.transformer_impl == 'local', \
                 "Transformer engine does not support Retro layers."
-        def build_layer(layer_number):
+        def build_layer(layer_number, n_e):
             if args.transformer_impl == 'local':
                 current_layer_type = _get_layer_type(
                     model_type, layer_type, self.retro_layer_numbers,
@@ -1350,7 +1429,8 @@ class ParallelTransformer(MegatronModule):
                     layer_number,
                     layer_type=current_layer_type,
                     self_attn_mask_type=self_attn_mask_type,
-                    drop_path_rate=self.drop_path_rates[layer_number - 1])
+                    drop_path_rate=self.drop_path_rates[layer_number - 1],
+                    num_experts=n_e)
             else:
                 return transformer_engine.pytorch.TransformerLayer(
                     args.hidden_size,
@@ -1424,8 +1504,23 @@ class ParallelTransformer(MegatronModule):
             self.num_layers = 1
             self.layers = torch.nn.ModuleList([ NoopTransformerLayer(1) ])
         else:
-            self.layers = torch.nn.ModuleList(
-                [build_layer(i + 1 + offset) for i in range(self.num_layers)])
+            assert len(num_experts) == 1 or len(num_experts) == args.num_layers // args.expert_interval, \
+            'num_experts must be either a single value or a list of the same length as the number of MoE layers'
+
+            # Create the list of MoE experts
+            if len(num_experts) == 1:
+                num_experts = num_experts * (args.num_layers // args.expert_interval)
+
+            # Build the layers
+            self.layers = []
+            for i in range(self.num_layers):
+                layer_num = i + 1 + offset
+                if layer_num % args.expert_interval == 0:
+                    n_e = num_experts[(layer_num-1) // args.expert_interval]
+                else:
+                    n_e = 1
+                self.layers.append(build_layer(layer_num, n_e))
+            self.layers = torch.nn.ModuleList(self.layers)
 
             # Update dropout rate for Retro encoder.
             if model_type == ModelType.retro_encoder:
@@ -1447,61 +1542,64 @@ class ParallelTransformer(MegatronModule):
                 sequence_parallel=args.sequence_parallel,
                 apply_layernorm_1p=args.apply_layernorm_1p)
 
+        if deepspeed.checkpointing.is_configured():
+            global get_cuda_rng_tracker, checkpoint
+            get_cuda_rng_tracker = deepspeed.checkpointing.get_cuda_rng_tracker
+            checkpoint = deepspeed.checkpointing.checkpoint
+
     def _get_layer(self, layer_number):
         return self.layers[layer_number]
 
     def _checkpointed_forward(self, hidden_states, attention_mask,
-                              encoder_output, enc_dec_attn_mask,
-                              rotary_pos_emb, is_first_microbatch):
+                              encoder_output, enc_dec_attn_mask, rotary_pos_emb, is_first_microbatch=False):
         """Forward method with activation checkpointing."""
         def custom(start, end):
             def custom_forward(*args, **kwargs):
-                x_, *args = args
+                x_ = args[0]
+                attention_mask = args[1]
+                encoder_output = args[2]
+                enc_dec_attn_mask = args[3]
+                rotary_pos_emb = args[4]
+                moe_losses = []
                 for index in range(start, end):
                     layer = self._get_layer(index)
-                    x_ = layer(x_, *args, **kwargs)
-                return x_
+                    x_, moe_loss = layer(x_, attention_mask=attention_mask, encoder_output=encoder_output, 
+                                         enc_dec_attn_mask=enc_dec_attn_mask, rotary_pos_emb=rotary_pos_emb, **kwargs)
+                    moe_losses.append(moe_loss)
+                return (x_, *moe_losses)
             return custom_forward
-
-        te_forward_kwargs = {}
-        if self.transformer_impl == 'transformer_engine':
-            te_forward_kwargs['is_first_microbatch'] = is_first_microbatch
-            if self.transformer_engine_rope_available:
-                te_forward_kwargs['rotary_pos_emb'] = rotary_pos_emb
-
-        if self.recompute_method == 'uniform':
-            # Uniformly divide the total number of Transformer layers and
-            # checkpoint the input activation of each divided chunk.
-            # A method to further reduce memory usage reducing checkpoints.
+        args = get_args()
+        if args.deepspeed:
+            # DeepSpeed integration is still not tested with newer checkpointing
+            # In Megatron LM (the else condition)
+            moe_losses = []
+            # Make sure memory is freed.
+            mpu.reset_checkpointed_activations_memory_buffer()
             l = 0
             while l < self.num_layers:
-                if self.transformer_impl == 'transformer_engine':
-                    hidden_states = transformer_engine.pytorch.distributed.checkpoint(
-                        custom(l, l + self.recompute_num_layers),
-                        self.distribute_saved_activations,
-                        tensor_parallel.get_cuda_rng_tracker,
-                        mpu.get_tensor_model_parallel_group(),
-                        hidden_states, attention_mask, encoder_output,
-                        enc_dec_attn_mask, **te_forward_kwargs)
-                else:
-                    hidden_states = tensor_parallel.checkpoint(
-                        custom(l, l + self.recompute_num_layers),
-                        self.distribute_saved_activations,
-                        hidden_states, attention_mask,
-                        encoder_output, enc_dec_attn_mask,
-                        None, None, None, None, rotary_pos_emb)
+                hidden_states, *local_moe_losses = mpu.checkpoint(
+                    custom(l, l + self.checkpoint_num_layers),
+                    hidden_states, attention_mask, encoder_output, enc_dec_attn_mask)
+                moe_losses.extend(local_moe_losses)
+                l += self.checkpoint_num_layers
 
-                l += self.recompute_num_layers
+            return hidden_states, moe_losses
+        else:
+            te_forward_kwargs = {}
+            if self.transformer_impl == 'transformer_engine':
+                te_forward_kwargs['is_first_microbatch'] = is_first_microbatch
+                if self.transformer_engine_rope_available:
+                    te_forward_kwargs['rotary_pos_emb'] = rotary_pos_emb
 
-        elif self.recompute_method == 'block':
-            # Checkpoint the input activation of only a set number of individual
-            # Transformer layers and skip the rest.
-            # A method fully use the device memory removing redundant re-computation.
-            for l in range(self.num_layers):
-                if l < self.recompute_num_layers:
+            if self.recompute_method == 'uniform':
+                # Uniformly divide the total number of Transformer layers and
+                # checkpoint the input activation of each divided chunk.
+                # A method to further reduce memory usage reducing checkpoints.
+                l = 0
+                while l < self.num_layers:
                     if self.transformer_impl == 'transformer_engine':
                         hidden_states = transformer_engine.pytorch.distributed.checkpoint(
-                            custom(l, l + 1),
+                            custom(l, l + self.recompute_num_layers),
                             self.distribute_saved_activations,
                             tensor_parallel.get_cuda_rng_tracker,
                             mpu.get_tensor_model_parallel_group(),
@@ -1509,25 +1607,49 @@ class ParallelTransformer(MegatronModule):
                             enc_dec_attn_mask, **te_forward_kwargs)
                     else:
                         hidden_states = tensor_parallel.checkpoint(
-                            custom(l, l + 1),
+                            custom(l, l + self.recompute_num_layers),
                             self.distribute_saved_activations,
                             hidden_states, attention_mask,
                             encoder_output, enc_dec_attn_mask,
                             None, None, None, None, rotary_pos_emb)
-                else:
-                    if self.transformer_impl == 'transformer_engine':
-                        hidden_states = custom(l, l + 1)(
-                            hidden_states, attention_mask, encoder_output,
-                            enc_dec_attn_mask, **te_forward_kwargs)
-                    else:
-                        hidden_states = custom(l, l + 1)(
-                            hidden_states, attention_mask,
-                            encoder_output, enc_dec_attn_mask,
-                            None, None, None, None, rotary_pos_emb)
-        else:
-            raise ValueError("Invalid activation recompute method.")
 
-        return hidden_states
+                    l += self.recompute_num_layers
+
+            elif self.recompute_method == 'block':
+                # Checkpoint the input activation of only a set number of individual
+                # Transformer layers and skip the rest.
+                # A method fully use the device memory removing redundant re-computation.
+                for l in range(self.num_layers):
+                    if l < self.recompute_num_layers:
+                        if self.transformer_impl == 'transformer_engine':
+                            hidden_states = transformer_engine.pytorch.distributed.checkpoint(
+                                custom(l, l + 1),
+                                self.distribute_saved_activations,
+                                tensor_parallel.get_cuda_rng_tracker,
+                                mpu.get_tensor_model_parallel_group(),
+                                hidden_states, attention_mask, encoder_output,
+                                enc_dec_attn_mask, **te_forward_kwargs)
+                        else:
+                            hidden_states = tensor_parallel.checkpoint(
+                                custom(l, l + 1),
+                                self.distribute_saved_activations,
+                                hidden_states, attention_mask,
+                                encoder_output, enc_dec_attn_mask,
+                                None, None, None, None, rotary_pos_emb)
+                    else:
+                        if self.transformer_impl == 'transformer_engine':
+                            hidden_states = custom(l, l + 1)(
+                                hidden_states, attention_mask, encoder_output,
+                                enc_dec_attn_mask, **te_forward_kwargs)
+                        else:
+                            hidden_states = custom(l, l + 1)(
+                                hidden_states, attention_mask,
+                                encoder_output, enc_dec_attn_mask,
+                                None, None, None, None, rotary_pos_emb)
+            else:
+                raise ValueError("Invalid activation recompute method.")
+
+            return hidden_states
 
     def set_input_tensor(self, input_tensor):
         """Set input tensor to be used instead of forward()'s input.
@@ -1552,6 +1674,23 @@ class ParallelTransformer(MegatronModule):
         if inference_params:
             assert self.recompute_granularity is None, \
                 'inference does not work with activation checkpointing'
+
+        # # Reza's note: DeepSpeed inference does not support transposes
+        # if not self.ds_inference:
+        #     if self.pre_process:
+        #         # Data format change to avoid explicit tranposes : [b s h] --> [s b h].
+        #         # If the input flag for fp32 residual connection is set, convert for float.
+        #         if self.fp32_residual_connection:
+        #             hidden_states = hidden_states.transpose(0, 1).contiguous().float()
+        #         # Otherwise, leave it as is.
+        #         else:
+        #             hidden_states = hidden_states.transpose(0, 1).contiguous()
+        #     else:
+        #         # See set_input_tensor()
+        #         hidden_states = self.input_tensor
+
+        #     if encoder_output is not None:
+        #          encoder_output = encoder_output.transpose(0, 1).contiguous()
 
         if not self.pre_process:
             # See set_input_tensor()
@@ -1600,8 +1739,10 @@ class ParallelTransformer(MegatronModule):
                 is_first_microbatch = self.microbatch_count % get_num_microbatches() == 0
 
                 # Forward pass.
-                if self.recompute_granularity == 'full':
-                    hidden_states = self._checkpointed_forward(hidden_states,
+                moe_losses = []
+                # if self.recompute_granularity == 'full':
+                if self.checkpoint_activations:
+                    hidden_states, moe_losses = self._checkpointed_forward(hidden_states,
                                                                attention_mask,
                                                                encoder_output,
                                                                enc_dec_attn_mask,
@@ -1633,13 +1774,16 @@ class ParallelTransformer(MegatronModule):
                             attention_mask,
                             **forward_kwargs)
 
-                        # First Retro decoder layer returns both hidden_states
-                        # and retriever_output. Make retriever_output available
-                        # to subsequence Retro layers.
-                        if isinstance(hidden_states, tuple):
-                            assert len(hidden_states) == 2
-                            hidden_states, retriever_output = hidden_states
-                            forward_kwargs["retriever_output"] = retriever_output
+                        # # First Retro decoder layer returns both hidden_states
+                        # # and retriever_output. Make retriever_output available
+                        # # to subsequence Retro layers.
+                        # if isinstance(hidden_states, tuple):
+                        #     assert len(hidden_states) == 2
+                        #     hidden_states, retriever_output = hidden_states
+                        #     forward_kwargs["retriever_output"] = retriever_output
+                        if not self.ds_inference:
+                            hidden_states, moe_loss = hidden_states
+                            moe_losses.append(moe_loss)
 
                 # Skip counter update for eval and activation checkpointing
                 if torch.is_grad_enabled() and self.training:
@@ -1647,6 +1791,9 @@ class ParallelTransformer(MegatronModule):
 
         # Final layer norm.
         if self.post_process and self.post_layer_norm:
+            # if not self.ds_inference:
+            #     # Reverting data format change [s b h] --> [b s h].
+            #     hidden_states = hidden_states.transpose(0, 1).contiguous()
             hidden_states = self.final_layernorm(hidden_states)
 
-        return hidden_states
+        return (hidden_states, *moe_losses)

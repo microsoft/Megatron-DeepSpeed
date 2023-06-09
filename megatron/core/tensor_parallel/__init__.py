@@ -25,6 +25,8 @@ from .random import (
     checkpoint,
     get_cuda_rng_tracker,
     model_parallel_cuda_manual_seed,
+    init_checkpointed_activations_memory_buffer,
+    reset_checkpointed_activations_memory_buffer,
 )
 
 from .utils import (
@@ -58,6 +60,8 @@ __all__ = [
     "checkpoint",
     "get_cuda_rng_tracker",
     "model_parallel_cuda_manual_seed",
+    "init_checkpointed_activations_memory_buffer",
+    "reset_checkpointed_activations_memory_buffer",
     # utils.py
     "split_tensor_along_last_dim",
     "split_tensor_into_1d_equal_chunks",

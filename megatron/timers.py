@@ -5,6 +5,8 @@
 from abc import ABC
 from abc import abstractmethod
 import time
+from typing import Sequence, Optional, Any
+import wandb
 
 import torch
 
@@ -126,7 +128,7 @@ class Timers:
     def __init__(self, log_level, log_option):
         self._log_level = log_level
         self._log_option = log_option
-        self._timers = {}
+        self.timers = {}
         self._log_levels = {}
         self._dummy_timer = DummyTimer()
         self._max_log_level = 2
@@ -135,13 +137,13 @@ class Timers:
     def __call__(self, name, log_level=None):
         # If the timer has already been set, then check if the log-level
         # is provided, it matches the one that the timer was created with.
-        if name in self._timers:
+        if name in self.timers:
             if log_level is not None:
                 assert log_level == self._log_levels[name], \
                     'input log level {} does not match already existing '\
                     'log level {} for {} timer'.format(
                         log_level, self._log_levels[name], name)
-            return self._timers[name]
+            return self.timers[name]
         # If timer does not exist and no log level is provided,
         # set it to the max log level which is 2.
         if log_level is None:
@@ -154,9 +156,9 @@ class Timers:
         if log_level > self._log_level:
             return self._dummy_timer
         # Otherwise, initalize the timer and set the level.
-        self._timers[name] = Timer(name)
+        self.timers[name] = Timer(name)
         self._log_levels[name] = log_level
-        return self._timers[name]
+        return self.timers[name]
 
 
     def _get_elapsed_time_all_ranks(self, names, reset, barrier):
@@ -188,12 +190,12 @@ class Timers:
                                         dtype=torch.float,
                                         device=torch.cuda.current_device())
         for i, name in enumerate(names):
-            if name in self._timers:
+            if name in self.timers:
                 # Here we don't need to pass the barrier flag as all
                 # the processes are already in sync. This avoids the
                 # issue of different timers having different barrier
                 # groups inside their class.
-                rank_name_to_time[rank, i] = self._timers[name].elapsed(
+                rank_name_to_time[rank, i] = self.timers[name].elapsed(
                     reset=reset)
 
         # See the note above for why we are not using gather.
@@ -260,8 +262,26 @@ class Timers:
             return None
         return output_string
 
+    def track(
+            self,
+            names: Sequence[str],
+            iteration: int,
+            normalizer: float = 1.0,
+            reset=False,
+            wbrun: Optional[Any] = None
+    ):
+        assert normalizer > 0.0
+        data = {
+            'timers/iter': iteration,
+        }
+        for name in names:
+            value = self.timers[name].elapsed(reset=reset) / normalizer
+            data[f'timers/{name}'] = value
 
-    def log(self, names, rank=None, normalizer=1.0, reset=True, barrier=False):
+        if wbrun is not None and wbrun is wandb.run:
+            wbrun.log(data)
+
+    def log(self, names, rank=None, normalizer=1.0, reset=True, barrier=False, wbrun: Optional[Any] = None):
         """Log a group of timers."""
 
         # Print.
@@ -280,15 +300,26 @@ class Timers:
             raise Exception('unknown timing log option {}'.format(
                 self._log_option))
 
+        data = {}
+        string = 'time (ms)'
+        for name in names:
+            elapsed_time = self.timers[name].elapsed(reset=reset) / normalizer
+            # multiply by 1000 to convert to milliseconds
+            string += ' | {}: {:.2f}'.format(name, elapsed_time * 1000)
+            data[f'timers/{name}'] = elapsed_time
         # If no input rank is provided, log on last rank.
         if rank is None:
             rank = torch.distributed.get_world_size() - 1
         if rank == torch.distributed.get_rank() and output_string is not None:
             print(output_string, flush=True)
+            try:
+                wbrun.log(data)
+            except Exception:
+                pass
 
 
     def write(self, names, writer, iteration, normalizer=1.0,
-              reset=False, barrier=False):
+              reset=False, barrier=False, wbrun: Optional[Any] = None,):
         """Write timers to a tensorboard writer
         Note that we only report maximum time across ranks to tensorboard.
         """
@@ -296,9 +327,14 @@ class Timers:
         # torch.utils.add_scalars makes each timer its own run, which
         # polutes the runs list, so we just add each as a scalar
         assert normalizer > 0.0
+        data = {}
         name_to_min_max_time = self._get_global_min_max_time(
             names, reset, barrier, normalizer)
         if writer is not None:
             for name in name_to_min_max_time:
                 _, max_time = name_to_min_max_time[name]
                 writer.add_scalar(name + '-time', max_time, iteration)
+                data[f'timers/{name}'] = max_time
+
+        if wbrun is not None and wbrun is wandb.run:
+            wbrun.log(data)

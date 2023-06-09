@@ -15,4 +15,5 @@ from .initialize  import initialize_megatron
 
 from .utils import (print_rank_0,
                     is_last_rank,
-                    print_rank_last)
+                    print_rank_last,
+                    is_rank_0)

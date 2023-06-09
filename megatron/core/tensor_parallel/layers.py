@@ -37,6 +37,9 @@ from .utils import (
     VocabUtility,
 )
 
+import deepspeed.runtime.activation_checkpointing.checkpointing as ds_checkpointing
+from deepspeed.accelerator import get_accelerator
+
 _grad_accum_fusion_available = True
 try:
     import fused_weight_gradient_mlp_cuda
@@ -88,6 +91,10 @@ def _initialize_affine_weight_gpu(weight, init_method,
                                          is_parallel=True,
                                          dim=partition_dim,
                                          stride=stride)
+
+    # if ds_checkpointing.is_configured():
+    #     global get_cuda_rng_tracker
+    #     get_cuda_rng_tracker = ds_checkpointing.get_cuda_rng_tracker
 
     with get_cuda_rng_tracker().fork():
         init_method(weight)
@@ -184,7 +191,7 @@ class VocabParallelEmbedding(torch.nn.Module):
         else:
             self.weight = Parameter(torch.empty(
                 self.num_embeddings_per_partition, self.embedding_dim,
-                device=torch.cuda.current_device(), dtype=params_dtype))
+                device=get_accelerator().current_device_name(), dtype=params_dtype))
             if perform_initialization:
                 _initialize_affine_weight_gpu(self.weight, init_method,
                                               partition_dim=0, stride=1)
@@ -295,7 +302,7 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
             assert not ctx.async_grad_allreduce
             dim_size = list(input.size())
             sub_grad_input = torch.empty(dim_size, dtype=input.dtype,
-                                         device=torch.cuda.current_device(),
+                                         device=get_accelerator().current_device_name(),
                                          requires_grad=False)
             # reduce_scatter
             handle = torch.distributed._reduce_scatter_base(sub_grad_input, grad_input,
@@ -304,17 +311,17 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
             # Here we rely on CUDA_DEVICE_MAX_CONNECTIONS=1 to ensure that the
             # reduce scatter is scheduled before the weight gradient computation
 
-
-        if ctx.gradient_accumulation_fusion:
-            if weight.main_grad.dtype == torch.float32:
-                fused_weight_gradient_mlp_cuda.wgrad_gemm_accum_fp32(total_input, grad_output, weight.main_grad)
-            elif weight.main_grad.dtype in (torch.float16, torch.bfloat16):
-                fused_weight_gradient_mlp_cuda.wgrad_gemm_accum_fp16(total_input, grad_output, weight.main_grad)
-            else:
-                raise RuntimeError("Unsupported gradient type for gradient accumulation fusion")
-            grad_weight = None
-        else:
-            grad_weight = grad_output.t().matmul(total_input)
+        # if ctx.gradient_accumulation_fusion:
+        #     if weight.main_grad.dtype == torch.float32:
+        #         fused_weight_gradient_mlp_cuda.wgrad_gemm_accum_fp32(total_input, grad_output, weight.main_grad)
+        #     elif weight.main_grad.dtype in (torch.float16, torch.bfloat16):
+        #         fused_weight_gradient_mlp_cuda.wgrad_gemm_accum_fp16(total_input, grad_output, weight.main_grad)
+        #     else:
+        #         raise RuntimeError("Unsupported gradient type for gradient accumulation fusion")
+        #     grad_weight = None
+        # else:
+        #     grad_weight = grad_output.t().matmul(total_input)
+        grad_weight = grad_output.t().matmul(total_input)
         grad_bias = grad_output.sum(dim=0) if use_bias else None
 
         if ctx.sequence_parallel:
@@ -457,6 +464,7 @@ class ColumnParallelLinear(torch.nn.Module):
                  perform_initialization=True,
                  gradient_accumulation_fusion=False,
                  sequence_parallel_enabled: bool = False,
+                 moe=False, enable_expert_tensor_parallelism=False
                  ):
         super(ColumnParallelLinear, self).__init__()
 
@@ -465,7 +473,12 @@ class ColumnParallelLinear(torch.nn.Module):
         self.output_size = output_size
         self.gather_output = gather_output
         # Divide the weight matrix along the last dimension.
-        world_size = get_tensor_model_parallel_world_size()
+        if moe and (not enable_expert_tensor_parallelism):
+            world_size = 1
+            self.is_expert_without_slicing = True
+        else:
+            world_size = get_tensor_model_parallel_world_size()
+            self.is_expert_without_slicing = False
         self.output_size_per_partition = divide(output_size, world_size)
         self.skip_bias_add = skip_bias_add
 
@@ -485,7 +498,7 @@ class ColumnParallelLinear(torch.nn.Module):
         else:
             self.weight = Parameter(torch.empty(
                 self.output_size_per_partition, self.input_size,
-                device=torch.cuda.current_device(), dtype=params_dtype))
+                device=get_accelerator().current_device_name(), dtype=params_dtype))
             if perform_initialization:
                 _initialize_affine_weight_gpu(self.weight, init_method,
                                               partition_dim=0, stride=stride)
@@ -497,7 +510,7 @@ class ColumnParallelLinear(torch.nn.Module):
             else:
                 self.bias = Parameter(torch.empty(
                     self.output_size_per_partition,
-                    device=torch.cuda.current_device(),
+                    device=get_accelerator().current_device_name(),
                     dtype=params_dtype))
             set_tensor_model_parallel_attributes(self.bias, True, 0, stride)
             # Always initialize bias to zero.
@@ -551,7 +564,7 @@ class ColumnParallelLinear(torch.nn.Module):
         bias = self.bias if not self.skip_bias_add else None
 
         if self.async_tensor_model_parallel_allreduce or \
-                self.sequence_parallel_enabled:
+                self.sequence_parallel_enabled or self.is_expert_without_slicing: # non-expert only tensor parallelism
             input_parallel = input_
         else:
             input_parallel = copy_to_tensor_model_parallel_region(input_)
@@ -564,7 +577,7 @@ class ColumnParallelLinear(torch.nn.Module):
             async_grad_allreduce=self.async_tensor_model_parallel_allreduce,
             sequence_parallel_enabled=self.sequence_parallel_enabled,
         )
-        if self.gather_output:
+        if self.gather_output and not self.is_expert_without_slicing:
             # All-gather across the partitions.
             assert not self.sequence_parallel_enabled
             output = gather_from_tensor_model_parallel_region(output_parallel)
@@ -621,6 +634,7 @@ class RowParallelLinear(torch.nn.Module):
                  perform_initialization=True,
                  gradient_accumulation_fusion=False,
                  sequence_parallel_enabled: bool = False,
+                 moe=False, enable_expert_tensor_parallelism=False
                  ):
         super(RowParallelLinear, self).__init__()
 
@@ -629,7 +643,11 @@ class RowParallelLinear(torch.nn.Module):
         self.output_size = output_size
         self.input_is_parallel = input_is_parallel
         # Divide the weight matrix along the last dimension.
-        world_size = get_tensor_model_parallel_world_size()
+        if moe and (not enable_expert_tensor_parallelism):
+            world_size = 1
+        else:
+            world_size = get_tensor_model_parallel_world_size()
+        self.is_expert_without_slicing = moe and world_size==1
         self.input_size_per_partition = divide(input_size, world_size)
         self.skip_bias_add = skip_bias_add
         self.gradient_accumulation_fusion = gradient_accumulation_fusion
@@ -654,7 +672,7 @@ class RowParallelLinear(torch.nn.Module):
         else:
             self.weight = Parameter(torch.empty(
                 self.output_size, self.input_size_per_partition,
-                device=torch.cuda.current_device(), dtype=params_dtype))
+                device=get_accelerator().current_device_name(), dtype=params_dtype))
             if perform_initialization:
                 _initialize_affine_weight_gpu(self.weight, init_method,
                                               partition_dim=1, stride=stride)
@@ -664,7 +682,7 @@ class RowParallelLinear(torch.nn.Module):
                                                   dtype=params_dtype))
             else:
                 self.bias = Parameter(torch.empty(
-                    self.output_size, device=torch.cuda.current_device(),
+                    self.output_size, device=get_accelerator().current_device_name(),
                     dtype=params_dtype))
             setattr(self.bias, 'sequence_parallel', sequence_parallel_enabled)
 
@@ -687,7 +705,7 @@ class RowParallelLinear(torch.nn.Module):
             - bias
         """
         # Set up backprop all-reduce.
-        if self.input_is_parallel:
+        if self.input_is_parallel or self.is_expert_without_slicing:
             input_parallel = input_
         else:
             assert not self.sequence_parallel_enabled
@@ -705,6 +723,8 @@ class RowParallelLinear(torch.nn.Module):
         # All-reduce across all the partitions.
         if self.sequence_parallel_enabled:
             output_ = reduce_scatter_to_sequence_parallel_region(output_parallel)
+        elif self.is_expert_without_slicing: # non-expert only tensor-parallelism
+            output_ = output_parallel
         else:
             output_ = reduce_from_tensor_model_parallel_region(output_parallel)
         if not self.skip_bias_add:

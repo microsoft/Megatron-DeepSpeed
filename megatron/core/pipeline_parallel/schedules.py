@@ -7,10 +7,15 @@ import torch
 from torch.autograd.variable import Variable
 from torch.nn.parallel.distributed import DistributedDataParallel as torchDDP
 
+from megatron import get_args
 from megatron.core import parallel_state
 from megatron.core.pipeline_parallel import p2p_communication
 from megatron.core.enums import ModelType
 from megatron.core.utils import get_attr_wrapped_model, get_model_type
+
+from megatron.utils import unwrap_model
+from megatron.model import DistributedDataParallel as LocalDDP
+from megatron.model import Float16Module
 
 # Types
 Shape = Union[List[int], torch.Size]
@@ -188,10 +193,6 @@ def custom_backward(output, grad_output):
         accumulate_grad=True,
     )
 
-
-
-
-
 def forward_step(forward_step_func,
                  data_iterator,
                  model,
@@ -208,6 +209,7 @@ def forward_step(forward_step_func,
     passed-in input_tensor is used.
 
     Returns output tensor."""
+    args = get_args()
     if timers is not None:
         timers('forward-compute', log_level=2).start()
 
@@ -216,8 +218,14 @@ def forward_step(forward_step_func,
         input_tensor = [input_tensor]
         unwrap_output_tensor = True
 
-    set_input_tensor = get_attr_wrapped_model(model, "set_input_tensor")
-    set_input_tensor(input_tensor)
+    unwrapped_model = unwrap_model(model, (torchDDP, LocalDDP, Float16Module))
+    try:
+        if not args.deepspeed:
+            unwrapped_model.set_input_tensor(input_tensor)
+        else:
+            unwrapped_model.module.set_input_tensor(input_tensor)
+    except:
+        print('unwrapped_model set_input_tensor fail !!! ')
 
     if enable_autocast:
         context_manager = torch.autocast("cuda", dtype=autocast_dtype)
@@ -230,7 +238,10 @@ def forward_step(forward_step_func,
         if not collect_non_loss_data:
             output_tensor = loss_func(output_tensor)
             loss, loss_reduced = output_tensor
-            output_tensor = loss / num_microbatches
+            if not args.no_pipeline_parallel:
+                output_tensor = loss /num_microbatches
+            else:
+                output_tensor = loss
             forward_data_store.append(loss_reduced)
         else:
             data = loss_func(output_tensor, non_loss_data=True)
@@ -253,7 +264,7 @@ def forward_step(forward_step_func,
 
 
 def backward_step(grad_scaler, input_tensor, output_tensor,
-                  output_tensor_grad, model_type, timers, deallocate_pipeline_outputs=False):
+                  output_tensor_grad, model_type, timers, deallocate_pipeline_outputs=False, model=None):
     """Backward step through passed-in output tensor.
 
     If last stage, output_tensor_grad is None, otherwise gradient of loss
@@ -265,6 +276,9 @@ def backward_step(grad_scaler, input_tensor, output_tensor,
     # NOTE: This code currently can handle at most one skip connection. It
     # needs to be modified slightly to support arbitrary numbers of skip
     # connections.
+    args = get_args()
+    if args.deepspeed:
+        assert model is not None
 
     if timers is not None:
         timers('backward-compute', log_level=2).start()
@@ -284,13 +298,16 @@ def backward_step(grad_scaler, input_tensor, output_tensor,
         output_tensor_grad = [output_tensor_grad]
 
     # Backward pass.
-    if output_tensor_grad[0] is None and grad_scaler is not None:
-        output_tensor[0] = grad_scaler(output_tensor[0])
-
-    if deallocate_pipeline_outputs:
-        custom_backward(output_tensor[0], output_tensor_grad[0])
+    if args.deepspeed:
+        model.backward(output_tensor[0])
     else:
-        torch.autograd.backward(output_tensor[0], grad_tensors=output_tensor_grad[0])
+        if output_tensor_grad[0] is None and grad_scaler is not None:
+            output_tensor[0] = grad_scaler(output_tensor[0])
+        
+        if deallocate_pipeline_outputs:
+            custom_backward(output_tensor[0], output_tensor_grad[0])
+        else:
+            torch.autograd.backward(output_tensor[0], grad_tensors=output_tensor_grad[0])
 
     # Collect the grad of the input_tensor.
     input_tensor_grad = [None]
@@ -362,6 +379,10 @@ def forward_backward_no_pipelining(*,
     if no_sync_func is None:
         no_sync_func = contextlib.nullcontext
 
+    args = get_args()
+    if args.deepspeed:
+        model.set_gradient_accumulation_boundary(False)
+
     model_type = get_model_type(model)
 
     forward_data_store = []
@@ -373,7 +394,10 @@ def forward_backward_no_pipelining(*,
                                          timers, collect_non_loss_data, dtype, enable_autocast)
             if not forward_only:
                 backward_step(grad_scaler, input_tensor, output_tensor,
-                              output_tensor_grad, model_type, timers, deallocate_pipeline_outputs)
+                              output_tensor_grad, model_type, timers, deallocate_pipeline_outputs, model)
+
+    if args.deepspeed:
+        model.set_gradient_accumulation_boundary(True)
 
     # Run computation for last microbatch out of context handler (want to
     # synchronize gradients).
@@ -383,7 +407,7 @@ def forward_backward_no_pipelining(*,
 
     if not forward_only:
         backward_step(grad_scaler, input_tensor, output_tensor,
-                      output_tensor_grad, model_type, timers, deallocate_pipeline_outputs)
+                      output_tensor_grad, model_type, timers, deallocate_pipeline_outputs, model)
 
     return forward_data_store
 
@@ -1179,7 +1203,7 @@ def forward_backward_pipelining_without_interleaving(*,
 
             input_tensor_grad = \
                 backward_step(grad_scaler, input_tensor, output_tensor,
-                              output_tensor_grad, model_type, timers, deallocate_pipeline_outputs)
+                              output_tensor_grad, model_type, timers, deallocate_pipeline_outputs, model)
 
             if last_iteration:
                 input_tensor = None
@@ -1209,7 +1233,7 @@ def forward_backward_pipelining_without_interleaving(*,
 
             input_tensor_grad = \
                 backward_step(grad_scaler, input_tensor, output_tensor,
-                              output_tensor_grad, model_type, timers, deallocate_pipeline_outputs)
+                              output_tensor_grad, model_type, timers, deallocate_pipeline_outputs, model)
 
             send_backward(input_tensor_grad, recv_tensor_shapes, timers=timers)
 

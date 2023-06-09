@@ -216,7 +216,8 @@ def save_checkpoint(iteration, model, optimizer, opt_param_scheduler):
     args = get_args()
 
     # Only rank zero of the data parallel writes to the disk.
-    model = unwrap_model(model)
+    if not args.deepspeed:
+        model = unwrap_model(model)
 
     print_rank_0('saving checkpoint at iteration {:7d} to {}'.format(
         iteration, args.save))
@@ -235,37 +236,59 @@ def save_checkpoint(iteration, model, optimizer, opt_param_scheduler):
         optimizer.save_parameter_state(optim_checkpoint_name)
 
     # Collect args, model, RNG.
-    if not torch.distributed.is_initialized() \
-       or mpu.get_data_parallel_rank() == 0:
+    if not torch.distributed.is_initialized() or mpu.get_data_parallel_rank() == 0 \
+        or args.deepspeed:
 
         # Arguments, iteration, and model.
         state_dict = {}
         state_dict['args'] = args
         state_dict['checkpoint_version'] = 3.0
         state_dict['iteration'] = iteration
-        if len(model) == 1:
-            state_dict['model'] = model[0].state_dict_for_save_checkpoint()
-        else:
-            for i in range(len(model)):
-                mpu.set_virtual_pipeline_model_parallel_rank(i)
-                state_dict['model%d' % i] = \
-                    model[i].state_dict_for_save_checkpoint()
 
-        # Optimizer stuff.
-        if not args.no_save_optim:
-            if optimizer is not None:
-                state_dict['optimizer'] = optimizer.state_dict()
-            if opt_param_scheduler is not None:
-                state_dict['opt_param_scheduler'] = \
-                    opt_param_scheduler.state_dict()
+        # DeepSpeed saves the model/optimizer/scheduler
+        if not args.deepspeed:
+            if len(model) == 1:
+                state_dict['model'] = model[0].state_dict_for_save_checkpoint()
+            else:
+                for i in range(len(model)):
+                    mpu.set_virtual_pipeline_model_parallel_rank(i)
+                    state_dict['model%d' % i] = \
+                        model[i].state_dict_for_save_checkpoint()
+
+            # Optimizer stuff.
+            if not args.no_save_optim:
+                if optimizer is not None:
+                    state_dict['optimizer'] = optimizer.state_dict()
+                if opt_param_scheduler is not None:
+                    state_dict['opt_param_scheduler'] = \
+                        opt_param_scheduler.state_dict()
 
         # RNG states.
         if not args.no_save_rng:
             state_dict["rng_state"] = rng_state
 
         # Save.
-        ensure_directory_exists(checkpoint_name)
-        torch.save(state_dict, checkpoint_name)
+        if not args.deepspeed:
+            ensure_directory_exists(checkpoint_name)
+            torch.save(state_dict, checkpoint_name)
+
+    if args.deepspeed:
+        #megatron model uses state_dict_for_save_checkpointing instead of the standard state_dict
+        #state_dict is used by deepspeed for module saving so it needs to point to the right function
+        if args.no_pipeline_parallel:
+            original_state_dict = model[0].module.state_dict
+            model[0].module.state_dict = model[0].module.state_dict_for_save_checkpoint
+
+        # Saving is a collective communication
+        checkpoint_name = get_checkpoint_name(args.save, iteration)
+
+        # Trim off the filename and mp_rank_* directory.
+        for _ in range(3):
+            checkpoint_name = os.path.dirname(checkpoint_name)
+        model[0].save_checkpoint(checkpoint_name, client_state=state_dict)
+
+        if args.no_pipeline_parallel:
+            model[0].module.state_dict = original_state_dict
 
     # Wait so everyone is done (necessary)
     if torch.distributed.is_initialized():
@@ -499,21 +522,37 @@ def load_checkpoint(model, optimizer, opt_param_scheduler, load_arg='load', stri
     args = get_args()
     load_dir = getattr(args, load_arg)
 
-    model = unwrap_model(model)
+    if args.deepspeed:
+        if args.finetune:
+            loaded_dir, state_dict = model[0].load_checkpoint(load_dir,
+                load_module_strict=strict, load_optimizer_states=False,
+                load_lr_scheduler_states=False, load_module_only=True)
+        else:
+            loaded_dir, state_dict = model[0].load_checkpoint(load_dir,
+                load_module_strict=strict)
+        if loaded_dir is None:
+            print_rank_0('WARNING: could not find the metadata file {} '.format(
+                load_dir))
+            print_rank_0('    will not load any checkpoints and will start from '
+                        'random')
+            return 0
+        release = False
+    else:
+        model = unwrap_model(model)
 
-    state_dict, release = _load_base_checkpoint(load_dir, rank0=False)
+        state_dict, release = _load_base_checkpoint(load_dir, rank0=False)
 
-    # Checkpoint not loaded.
-    if state_dict is None:
+        # Checkpoint not loaded.
+        if state_dict is None:
 
-        # Conditionally exit at this point.
-        if args.exit_on_missing_checkpoint:
-            print_rank_0(">> '--exit-on-missing-checkpoint' set ... exiting. <<")
-            torch.distributed.barrier()
-            sys.exit()
+            # Conditionally exit at this point.
+            if args.exit_on_missing_checkpoint:
+                print_rank_0(">> '--exit-on-missing-checkpoint' set ... exiting. <<")
+                torch.distributed.barrier()
+                sys.exit()
 
-        # Iteration defaults to 0.
-        return 0
+            # Iteration defaults to 0.
+            return 0
 
     # Set checkpoint version.
     set_checkpoint_version(state_dict.get('checkpoint_version', 0))
@@ -521,6 +560,8 @@ def load_checkpoint(model, optimizer, opt_param_scheduler, load_arg='load', stri
     # Set iteration.
     if args.finetune or release:
         iteration = 0
+        # Make DeepSpeed engine aware of this reset of iteration
+        model[0].global_steps = 0
     else:
         try:
             iteration = state_dict['iteration']
@@ -548,12 +589,13 @@ def load_checkpoint(model, optimizer, opt_param_scheduler, load_arg='load', stri
         print_rank_0('could not find arguments in the checkpoint ...')
 
     # Model.
-    if len(model) == 1:
-        model[0].load_state_dict(state_dict['model'], strict=strict)
-    else:
-        for i in range(len(model)):
-            mpu.set_virtual_pipeline_model_parallel_rank(i)
-            model[i].load_state_dict(state_dict['model%d' % i], strict=strict)
+    if not args.deepspeed:
+        if len(model) == 1:
+            model[0].load_state_dict(state_dict['model'], strict=strict)
+        else:
+            for i in range(len(model)):
+                mpu.set_virtual_pipeline_model_parallel_rank(i)
+                model[i].load_state_dict(state_dict['model%d' % i], strict=strict)
 
     # Fix up query/key/value matrix ordering if needed.
     checkpoint_version = get_checkpoint_version()
@@ -561,38 +603,39 @@ def load_checkpoint(model, optimizer, opt_param_scheduler, load_arg='load', stri
     fix_query_key_value_ordering(model, checkpoint_version)
 
     # Optimizer.
-    if not release and not args.finetune and not args.no_load_optim:
-        try:
-            # Load state dict.
-            if optimizer is not None:
-                optimizer.load_state_dict(state_dict['optimizer'])
+    if not args.deepspeed:
+        if not release and not args.finetune and not args.no_load_optim:
+            try:
+                # Load state dict.
+                if optimizer is not None:
+                    optimizer.load_state_dict(state_dict['optimizer'])
 
-            # Load distributed optimizer's custom parameter state.
-            if args.use_distributed_optimizer:
-                tracker_filename = get_checkpoint_tracker_filename(load_dir)
-                iteration, release = read_metadata(tracker_filename)
-                model_checkpoint_name = \
-                    get_checkpoint_name(load_dir, iteration, release)
-                optim_checkpoint_name = \
-                    get_distributed_optimizer_checkpoint_name(
-                        model_checkpoint_name)
-                optimizer.load_parameter_state(optim_checkpoint_name)
+                # Load distributed optimizer's custom parameter state.
+                if args.use_distributed_optimizer:
+                    tracker_filename = get_checkpoint_tracker_filename(load_dir)
+                    iteration, release = read_metadata(tracker_filename)
+                    model_checkpoint_name = \
+                        get_checkpoint_name(load_dir, iteration, release)
+                    optim_checkpoint_name = \
+                        get_distributed_optimizer_checkpoint_name(
+                            model_checkpoint_name)
+                    optimizer.load_parameter_state(optim_checkpoint_name)
 
-            # Load scheduler.
-            if opt_param_scheduler is not None:
-                if 'lr_scheduler' in state_dict: # backward compatbility
-                    opt_param_scheduler.load_state_dict(state_dict['lr_scheduler'])
-                else:
-                    opt_param_scheduler.load_state_dict(state_dict['opt_param_scheduler'])
-        except KeyError:
-            print_rank_0('Unable to load optimizer from checkpoint {}. '
-                         'Specify --no-load-optim or --finetune to prevent '
-                         'attempting to load the optimizer state, '
-                         'exiting ...'.format(checkpoint_name))
-            sys.exit()
-    else:
-        if (args.fp16 or args.bf16) and optimizer is not None:
-            optimizer.reload_model_params()
+                # Load scheduler.
+                if opt_param_scheduler is not None:
+                    if 'lr_scheduler' in state_dict: # backward compatbility
+                        opt_param_scheduler.load_state_dict(state_dict['lr_scheduler'])
+                    else:
+                        opt_param_scheduler.load_state_dict(state_dict['opt_param_scheduler'])
+            except KeyError:
+                print_rank_0('Unable to load optimizer from checkpoint {}. '
+                            'Specify --no-load-optim or --finetune to prevent '
+                            'attempting to load the optimizer state, '
+                            'exiting ...'.format(checkpoint_name))
+                sys.exit()
+        else:
+            if (args.fp16 or args.bf16) and optimizer is not None:
+                optimizer.reload_model_params()
 
     # rng states.
     if not release and not args.finetune and not args.no_load_rng:
