@@ -1,4 +1,5 @@
 #!/bin/bash
+# This example script is contributed by external user https://github.com/LydiaXiaohongLi
 set -ex
 
 ######################################
