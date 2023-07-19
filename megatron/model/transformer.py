@@ -355,8 +355,8 @@ class FlashSelfAttention(torch.nn.Module):
     def __init__(self, causal=False, softmax_scale=None, attention_dropout=0.0,
                  device=None, dtype=None):
         super().__init__()
-        assert flash_attn_unpadded_func is not None or flash_attn_builder is not None, ('Please install FlashAttention first or implement your own fmha'
-                                                      'e.g., with pip install flash-attn')
+        assert flash_attn_unpadded_func is not None or flash_attn_builder is not None, ('Please install FlashAttention first'
+                                                      'e.g., with pip install flash-attn or implement your own flash attention')
         assert rearrange is not None, 'Please install einops first, e.g., with pip install einops'
         self.causal = causal
         self.softmax_scale = softmax_scale
@@ -370,7 +370,10 @@ class FlashSelfAttention(torch.nn.Module):
         """
 
         assert all((i.dtype in [torch.float16, torch.bfloat16] for i in (q,k,v)))
-        assert all((i.is_cuda or i.is_xpu for i in (q,k,v)))
+        if get_accelerator().device_name() == 'cuda':
+            assert all((i.is_cuda for i in (q,k,v)))
+        else:
+            assert all((i.is_xpu for i in (q,k,v)))
 
         batch_size, seqlen_q = q.shape[0], q.shape[1]
         seqlen_k = k.shape[1]
@@ -434,8 +437,8 @@ class ParallelAttention(MegatronModule):
             and self.attn_mask_type == AttnMaskType.causal
         if self.use_flash_attn:
             if flash_attn_unpadded_func is None and flash_attn_builder is None:
-                raise ImportError('FlashAttention is not installed and not implemented, please install with '
-                                  'pip install flash-attn')
+                raise ImportError('FlashAttention is not installed, please install with '
+                                  'pip install flash-attn or or implement your own flash attention')
             assert attention_type == AttnType.self_attn, ('FlashAttention code path only supports '
                                                           'self-attention for now')
             assert self.attn_mask_type == AttnMaskType.causal, ('FlashAttention code path only '
