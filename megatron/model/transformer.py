@@ -355,7 +355,7 @@ class FlashSelfAttention(torch.nn.Module):
     def __init__(self, causal=False, softmax_scale=None, attention_dropout=0.0,
                  device=None, dtype=None):
         super().__init__()
-        assert flash_attn_unpadded_func is not None or flash_attn_builder is not None, ('Please install FlashAttention first'
+        assert flash_attn_unpadded_func is not None or flash_attn_builder is not None, ('Please install FlashAttention first,'
                                                       'e.g., with pip install flash-attn or implement your own flash attention')
         assert rearrange is not None, 'Please install einops first, e.g., with pip install einops'
         self.causal = causal
