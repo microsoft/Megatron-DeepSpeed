@@ -12,7 +12,7 @@ dist/
 *.swp
 
 # AML workspace config file
-*config.json
+config.json
 
 .coverage_*
 *~
