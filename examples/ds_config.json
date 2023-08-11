@@ -1,0 +1,81 @@
+{
+    "train_batch_size": 4,
+    "train_micro_batch_size_per_gpu": 1,
+    "steps_per_print": 1,
+
+    "zero_optimization": {
+      "stage": 1,
+      "elastic_checkpoint": false,
+      "offload_optimizer": {
+        "device":"cpu"
+      },
+      "offload_param": {
+        "device":"cpu"
+      }
+    },
+
+    "gradient_clipping": 0.0,
+    "prescale_gradients": false,
+    "zero_allow_untested_optimizer": true,
+    "zero_force_ds_cpu_optimizer": false,
+    "fp16": {
+      "enabled": false,
+      "loss_scale": 0,
+      "loss_scale_window": 500,
+      "hysteresis": 2,
+      "min_loss_scale": 1,
+      "initial_scale_power": 11
+    },
+
+    "wall_clock_breakdown" : false,
+    "dataloader_drop_last": true,
+    "data_efficiency": {
+      "enabled": false,
+      "seed": 1234,
+      "data_routing": {
+        "enabled": false,
+        "random_ltd":{
+          "enabled": false,
+          "total_layer_num": 24,
+          "random_ltd_layer_num": 22,
+          "random_ltd_layer_id": [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22],
+          "model_mask_name": "attention_mask",
+          "model_type": "decoder",
+          "hidden_state_order": "seq_batch_dim",
+          "random_ltd_schedule": {
+            "min_value": 2048,
+            "max_value": 2048,
+            "schedule_type":"fixed_linear",
+            "schedule_config": {
+              "require_steps": 1,
+              "seq_per_step": 16
+            }
+          }
+        }
+      },
+      "data_sampling": {
+        "enabled": false,
+        "num_workers": 0,
+        "curriculum_learning": {
+          "enabled": false,
+          "data_cluster_path": "",
+          "curriculum_metrics": {
+            "dummy": {
+              "index_to_sample_path": "dummy",
+              "index_to_metric_path": "dummy",
+              "difficulty_type": "value",
+              "clustering_type": "single_cluster",
+              "min_difficulty": 2048,
+              "max_difficulty": 2048,
+              "schedule_type": "fixed_root",
+              "schedule_config": {
+                "total_curriculum_step": 1,
+                "difficulty_step": 1,
+                "root_degree": 1
+              }
+            }
+          }
+        }
+      }
+    }
+  }
