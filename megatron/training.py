@@ -48,6 +48,12 @@ from deepspeed.accelerator import get_accelerator
 from deepspeed.compression.compress import init_compression, redundancy_clean
 from deepspeed.runtime.data_pipeline.data_routing.helper import convert_to_random_ltd
 from megatron.model.transformer import ParallelTransformerLayer
+from megatron.utils import world_size, rank
+from common.utils.timecost import TimeTicker, timecost_wrapper
+from common.constant.env import Env
+from common.constant.label import TLabel
+from common.telemetry.metrics import  report_loss, start_basic_timer
+from  common.logger.log import init_logs, logger
 
 def print_datetime(string):
     """Note that this call will sync across all ranks."""
@@ -114,6 +120,7 @@ def pretrain(train_valid_test_dataset_provider,
 
     args = get_args()
     timers = get_timers()
+    init_logs(args.log_dir, rank())
 
     if args.deepspeed:
         args.deepspeed_configuration = json.load(
@@ -138,6 +145,10 @@ def pretrain(train_valid_test_dataset_provider,
     timers('model-and-optimizer-setup').stop()
     print_datetime('after model, optimizer, and learning rate '
                    'scheduler are built')
+    
+    start_basic_timer(world_size(), rank(), args.micro_batch_size,  args.seq_length, 0, 
+        world_size() / (args.tensor_model_parallel_size * args.pipeline_model_parallel_size), args.tensor_model_parallel_size, 
+        args.pipeline_model_parallel_size)
 
     # Data stuff.
     timers('train/valid/test-data-iterators-setup', log_level=0).start(
@@ -694,14 +705,15 @@ def train_step(forward_step_func, data_iterator,
 
     # Update parameters.
     timers('optimizer', log_level=1).start(barrier=args.barrier_with_L1_time)
-    if args.deepspeed:
-        increment = get_num_microbatches() * \
-                    args.micro_batch_size * \
-                    args.data_parallel_size
-        model[0].step(lr_kwargs={'increment': increment})
-        update_successful = model[0].was_step_applied()
-    else:
-        update_successful, grad_norm, num_zeros_in_grad = optimizer.step(args, timers)
+    with TimeTicker(TLabel.OPTIMIZER.value, world_size(), rank(), True, True, 0):
+        if args.deepspeed:
+            increment = get_num_microbatches() * \
+                        args.micro_batch_size * \
+                        args.data_parallel_size
+            model[0].step(lr_kwargs={'increment': increment})
+            update_successful = model[0].was_step_applied()
+        else:
+            update_successful, grad_norm, num_zeros_in_grad = optimizer.step(args, timers)
     timers('optimizer').stop()
 
     # Gather params.
@@ -1016,6 +1028,7 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
             elapsed_time_per_iteration * 1000.0)
         log_string += ' learning rate: {:.3E} |'.format(learning_rate)
         log_string += ' global batch size: {:5d} |'.format(batch_size)
+        report_loss(rank(), learning_rate, total_loss_dict["lm loss"].item(), iteration)
         for key in total_loss_dict:
             if key not in [advanced_iters_key, skipped_iters_key,
                            nan_iters_key]:
@@ -1119,13 +1132,14 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
             args.curriculum_seqlen = args.curriculum_scheduler.update_difficulty( \
                     args.iteration + 1)
         args.curr_iteration = iteration
-        loss_dict, skipped_iter, grad_norm, num_zeros_in_grad = \
-            train_step(forward_step_func,
-                       train_data_iterator,
-                       model,
-                       optimizer,
-                       opt_param_scheduler,
-                       config)
+        with TimeTicker(TLabel.STEP_TRAIN.value, world_size(), rank(), True, True, iteration) as t:
+            loss_dict, skipped_iter, grad_norm, num_zeros_in_grad = \
+                train_step(forward_step_func,
+                        train_data_iterator,
+                        model,
+                        optimizer,
+                        opt_param_scheduler,
+                        config)
         iteration += 1
         args.iteration = iteration
         new_samples = mpu.get_data_parallel_world_size() * \

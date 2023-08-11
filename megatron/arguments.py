@@ -749,6 +749,14 @@ def _add_regularization_args(parser):
                        'numerical stability')
     group.add_argument('--sgd-momentum', type=float, default=0.9,
                        help='Momentum factor for sgd')
+      
+    group.add_argument('--log-dir', type=str, default='./logs',
+                       help='Options for log dir')
+    
+    group.add_argument('--prometheus-gateway', type=str, default='localhost:9000',
+                       help='Options for prometheus gateway')
+    group.add_argument('--service', type=str, default='gpt',
+                       help='Options for prometheus gateway')
 
     return parser
 
@@ -1093,7 +1101,7 @@ def _add_distributed_args(parser):
                        help='overlap pipeline parallel communication with forward and backward chunks',
                        dest='overlap_p2p_comm')
     group.add_argument('--distributed-backend', default='nccl',
-                       choices=['nccl', 'gloo', 'ccl'],
+                       choices=['mccl','nccl', 'gloo', 'ccl'],
                        help='Which backend to use for distributed training.')
     group.add_argument('--distributed-timeout-minutes', type=int, default=10,
                        help='Timeout minutes for torch.distributed.')

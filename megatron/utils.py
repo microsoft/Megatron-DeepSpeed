@@ -22,6 +22,12 @@ from megatron.core import mpu
 from megatron.core.tensor_parallel import param_is_not_tensor_parallel_duplicate
 from megatron.model.module import param_is_not_shared
 
+def rank():
+    return torch.distributed.get_rank()
+ 
+def world_size():
+    return torch.distributed.get_world_size()
+
 
 def unwrap_model(model, module_instances=(torchDDP)):
     return_list = True

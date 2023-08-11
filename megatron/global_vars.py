@@ -10,6 +10,8 @@ from megatron import dist_signal_handler
 from megatron.tokenizer import build_tokenizer
 from .microbatches import build_num_microbatches_calculator
 from .timers import Timers
+from  common.telemetry.metrics import init_prometheus
+from  common.constant.env import Env
 
 _GLOBAL_ARGS = None
 _GLOBAL_RETRO_ARGS = None
@@ -93,6 +95,9 @@ def set_global_variables(args):
     _set_tensorboard_writer(args)
     _set_adlr_autoresume(args)
     _set_timers(args)
+
+    # Initialize prometheus metrics
+    __set_prometheus(args)
 
     if args.exit_signal_handler:
         _set_signal_handler()
@@ -185,3 +190,9 @@ def _ensure_var_is_initialized(var, name):
 def _ensure_var_is_not_initialized(var, name):
     """Make sure the input variable is not None."""
     assert var is None, '{} is already initialized.'.format(name)
+
+def __set_prometheus(args):
+    """Initialize prometheus metrics."""
+    args.env = Env.TEST.name
+    init_prometheus(args.prometheus_gateway, args.service, args.env)
+
