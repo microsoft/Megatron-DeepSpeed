@@ -283,7 +283,7 @@ def _communicate(*, tensor_send_next: Optional[torch.Tensor],
             )
         tensor_recv_prev = torch.empty(recv_prev_shape,
                                        requires_grad=True,
-                                       device=get_accelerator().current_device(),
+                                       device=get_accelerator().current_device_name(),
                                        dtype=config.pipeline_dtype)
     if recv_next:
         if config.pipeline_dtype is None:
@@ -295,7 +295,7 @@ def _communicate(*, tensor_send_next: Optional[torch.Tensor],
             )
         tensor_recv_next = torch.empty(recv_next_shape,
                                        requires_grad=True,
-                                       device=get_accelerator().current_device(),
+                                       device=get_accelerator().current_device_name(),
                                        dtype=config.pipeline_dtype)
 
     # Send tensors in both the forward and backward directions as appropriate.
