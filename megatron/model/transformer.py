@@ -1,26 +1,29 @@
 # Copyright (c) 2023, NVIDIA CORPORATION. All rights reserved.
 
 """Transformer."""
-from contextlib import nullcontext
 import math
+from contextlib import nullcontext
+from typing import Optional
+
+import deepspeed
 import numpy as np
 import torch
 import torch.nn.functional as F
-from typing import Optional
+from deepspeed.accelerator import get_accelerator
+from deepspeed.moe.layer import MoE
 
-from megatron import get_timers, get_args, get_retro_args, core, get_num_microbatches
-from .module import MegatronModule
+from megatron import (core, get_args, get_num_microbatches, get_retro_args,
+                      get_timers)
 from megatron.core import parallel_state, tensor_parallel
 from megatron.core.enums import ModelType
 from megatron.model import LayerNorm
-from megatron.model.enums import AttnMaskType, LayerType, AttnType
-from megatron.model.fused_softmax import FusedScaleMaskSoftmax
+from megatron.model.enums import AttnMaskType, AttnType, LayerType
 from megatron.model.fused_bias_gelu import bias_gelu_impl
+from megatron.model.fused_softmax import FusedScaleMaskSoftmax
 from megatron.model.rotary_pos_embedding import apply_rotary_pos_emb
-from megatron.model.utils import attention_mask_func, openai_gelu, erf_gelu
-import deepspeed
-from deepspeed.moe.layer import MoE
-from deepspeed.accelerator import get_accelerator
+from megatron.model.utils import attention_mask_func, erf_gelu, openai_gelu
+
+from .module import MegatronModule
 
 try:
     from einops import rearrange
@@ -744,7 +747,8 @@ class ParallelAttention(MegatronModule):
         # apply relative positional encoding (rotary embedding)
         if rotary_pos_emb is not None:
             q_pos_emb, k_pos_emb = rotary_pos_emb
-            query_layer = apply_rotary_pos_emb(query_layer, q_pos_emb)
+            q_start = key_layer.size(0) - query_layer.size(0)
+            query_layer = apply_rotary_pos_emb(query_layer, q_pos_emb, start_idx=q_start)
             key_layer = apply_rotary_pos_emb(key_layer, k_pos_emb)
             # TODO, can apply positional embedding to value_layer so it has
             # absolute positional embedding.
@@ -1468,8 +1472,9 @@ class ParallelTransformer(MegatronModule):
         self.transformer_engine_rope_available = False
         if self.transformer_impl == 'transformer_engine':
             global transformer_engine
-            import transformer_engine
             from importlib.metadata import version
+
+            import transformer_engine
             from pkg_resources import packaging
 
             te_version = packaging.version.Version(version("transformer-engine"))

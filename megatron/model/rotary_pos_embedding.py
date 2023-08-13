@@ -5,11 +5,12 @@
 # common/megatron/rotary_pos_embedding.py
 
 import importlib.util
-import torch
 
+import torch
 from torch import einsum, nn
 
 __all__ = ['RotaryEmbedding', 'apply_rotary_pos_emb']
+
 
 class RotaryEmbedding(nn.Module):
     def __init__(self, dim):
@@ -21,7 +22,8 @@ class RotaryEmbedding(nn.Module):
 
     def forward(self, max_seq_len, offset=0):
         seq = torch.arange(max_seq_len, device=self.inv_freq.device) + offset
-        freqs = einsum('i , j -> i j', seq.type_as(self.inv_freq), self.inv_freq)
+        freqs = einsum(
+            'i , j -> i j', seq.type_as(self.inv_freq), self.inv_freq)
         # first part even vector components, second part odd vector components,
         #  2 * dim in dimension size
         emb = torch.cat((freqs, freqs), dim=-1)
@@ -40,7 +42,7 @@ def _rotate_half(x):
     return torch.cat((-x2, x1), dim=-1)
 
 
-def apply_rotary_pos_emb(t, freqs):
+def apply_rotary_pos_emb(t, freqs, start_idx=0):
     """
     input tensor t is of shape [seq_length, ..., dim]
     rotary positional embeding tensor freqs is of shape [seq_length, ..., dim]
@@ -50,7 +52,12 @@ def apply_rotary_pos_emb(t, freqs):
     # ideally t_pass is empty so rotary pos embedding is applied to all tensor t
     t, t_pass = t[..., :rot_dim], t[..., rot_dim:]
 
+    if t.size(0) < freqs.size(0) or start_idx > 0:
+        tmp_freqs = freqs[start_idx:start_idx+t.size(0)]
+    else:
+        tmp_freqs = freqs
+
     # first part is cosine component
     # second part is sine component, need to change signs with _rotate_half method
-    t = (t * freqs.cos()) + (_rotate_half(t) * freqs.sin())
+    t = (t * tmp_freqs.cos()) + (_rotate_half(t) * tmp_freqs.sin())
     return torch.cat((t, t_pass), dim=-1)
