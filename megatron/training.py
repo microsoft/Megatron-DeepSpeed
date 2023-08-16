@@ -698,7 +698,8 @@ def train_step(forward_step_func, data_iterator,
         increment = get_num_microbatches() * \
                     args.micro_batch_size * \
                     args.data_parallel_size
-        model[0].step(lr_kwargs={'increment': increment})
+        model[0].step(lr_kwargs={'increment': 0}) # grad accum hotfix
+        opt_param_scheduler.step(increment=increment)
         update_successful = model[0].was_step_applied()
     else:
         update_successful, grad_norm, num_zeros_in_grad = optimizer.step(args, timers)
