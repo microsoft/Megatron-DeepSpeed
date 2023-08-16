@@ -6,25 +6,32 @@ set -ex
 # Change the below configurations here
 BASE_PATH=./tmp
 DS_CONFIG=${BASE_PATH}/deepspeed.json
-DATASET_1="./tmp/data/bookcorpus_train_1m_text_sentence"
+DATASET_1="./tmp/megatron_test_text_sentence"
 DATASET="1 ${DATASET_1}"
 CHECKPOINT_PATH=./tmp
 TOKENIZER_PATH=./tmp/tokenizer.model # offical llama tokenizer.model
 
 TP=2
-PP=2
+PP=1
 ZERO_STAGE=0
 
-GPUS_PER_NODE=8
+GPUS_PER_NODE=2
 MASTER_ADDR=localhost
 MASTER_PORT=6000
 NNODES=1
 NODE_RANK=0
 
-HIDDEN_SIZE=2048 # e.g. llama-13b: 5120
-FFN_HIDDEN_SIZE=5504 # e.g. llama-13b: 13824
-NUM_LAYERS=24 # e.g. llama-13b: 40
-NUM_HEADS=16 # e.g. llama-13b: 40
+# HIDDEN_SIZE=2048 # e.g. llama-13b: 5120
+# FFN_HIDDEN_SIZE=5504 # e.g. llama-13b: 13824
+# NUM_LAYERS=24 # e.g. llama-13b: 40
+# NUM_HEADS=16 # e.g. llama-13b: 40
+# SEQ_LENGTH=2048
+# NUM_KV_HEADS=4 # llama2 70B uses GQA
+
+HIDDEN_SIZE=1024 # e.g. llama-13b: 5120
+FFN_HIDDEN_SIZE=2048 # e.g. llama-13b: 13824
+NUM_LAYERS=12 # e.g. llama-13b: 40
+NUM_HEADS=8 # e.g. llama-13b: 40
 SEQ_LENGTH=2048
 NUM_KV_HEADS=4 # llama2 70B uses GQA
 
