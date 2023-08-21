@@ -1228,10 +1228,13 @@ def _add_data_args(parser):
                                 'GPT2BPETokenizer',
                                 'SentencePieceTokenizer',
                                 'GPTSentencePieceTokenizer',
+                                'PretrainedFromHF',
                                 'NullTokenizer'],
                        help='What type of tokenizer to use.')
     group.add_argument('--tokenizer-model', type=str, default=None,
                        help='Sentencepiece tokenizer model.')
+    group.add_argument('--tokenizer-name-or-path', type=str, default=None,
+                          help='Pretrained tokenizer name or path')
     group.add_argument('--data-impl', type=str, default='infer',
                        choices=['mmap', 'infer'],
                        help='Implementation of indexed datasets.')
