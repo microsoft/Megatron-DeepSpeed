@@ -48,6 +48,7 @@ from deepspeed.accelerator import get_accelerator
 from deepspeed.compression.compress import init_compression, redundancy_clean
 from deepspeed.runtime.data_pipeline.data_routing.helper import convert_to_random_ltd
 from megatron.model.transformer import ParallelTransformerLayer
+from deepspeed.runtime.config import DeepSpeedConfig
 
 def print_datetime(string):
     """Note that this call will sync across all ranks."""
@@ -116,8 +117,9 @@ def pretrain(train_valid_test_dataset_provider,
     timers = get_timers()
 
     if args.deepspeed:
-        args.deepspeed_configuration = json.load(
-            open(args.deepspeed_config, 'r', encoding='utf-8'))
+        # args.deepspeed_configuration = json.load(
+        #     open(args.deepspeed_config, 'r', encoding='utf-8'))
+        args.deepspeed_configuration = DeepSpeedConfig(args.deepspeed_config)._param_dict
         if "curriculum_learning" in args.deepspeed_configuration and \
             "enabled" in args.deepspeed_configuration["curriculum_learning"]:
             args.curriculum_learning_legacy = args.deepspeed_configuration[ \
@@ -459,9 +461,9 @@ def load_model_weights_only(model_provider_func):
     lr_scheduler = None
 
     if args.deepspeed:
-        with open(args.deepspeed_config, 'r') as fd:
-            ds_config = json.load(fd)
-
+        #with open(args.deepspeed_config, 'r') as fd:
+        #    ds_config = json.load(fd)
+        ds_config = DeepSpeedConfig(args.deepspeed_config)._params_dict
         # When loading just the model weights, ZeRO can be disabled.
         if 'zero_optimization' in ds_config:
             del ds_config['zero_optimization']
