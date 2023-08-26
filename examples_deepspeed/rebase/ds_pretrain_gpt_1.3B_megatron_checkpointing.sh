@@ -17,14 +17,14 @@ seq_len=2048
 ## provide better zero-shot eval results.
 
 ## GPT-3 Small 125M
-model_size=0.125
-num_layers=12
-hidden_size=768
-num_attn_heads=12
-global_batch_size=256
-lr=6.0e-4
-min_lr=1.0e-6
-init_std=0.02
+# model_size=0.125
+# num_layers=12
+# hidden_size=768
+# num_attn_heads=12
+# global_batch_size=256
+# lr=6.0e-4
+# min_lr=1.0e-6
+# init_std=0.02
 
 ## GPT-3 Medium 350M
 # model_size=0.35
@@ -47,14 +47,14 @@ init_std=0.02
 # init_std=0.015
 
 ## GPT-3 XL 1.3B
-# model_size=1.3
-# num_layers=24
-# hidden_size=2048
-# num_attn_heads=16
-# global_batch_size=512
-# lr=2.0e-4
-# min_lr=1.0e-6
-# init_std=0.013
+model_size=1.3
+num_layers=24
+hidden_size=2048
+num_attn_heads=16
+global_batch_size=512
+lr=2.0e-4
+min_lr=1.0e-6
+init_std=0.013
 
 ## GPT-3 2.7B
 # model_size=2.7
@@ -182,13 +182,12 @@ host="${HOSTNAME}"
 seed=1234
 num_workers=0
 
-data_path="BookCorpusDataset_text_document"
-if [ ! -f "BookCorpusDataset_text_document.bin" ]; then
-    wget https://the-eye.eu/public/AI/pile_neox/data/BookCorpusDataset_text_document.bin
-fi
-if [ ! -f "BookCorpusDataset_text_document.idx" ]; then
-    wget https://the-eye.eu/public/AI/pile_neox/data/BookCorpusDataset_text_document.idx
-fi
+## Public the Pile dataset, can be downloaded at
+## https://mystic.the-eye.eu/public/AI/pile_neox/ or 
+## https://the-eye.eu/public/AI/pile_neox/ Change data_home to where you
+## store the pile_text_document.bin and pile_text_document.idx.
+data_home="/vc_data_blob/users/conglli/the_pile_public_merged_nopreprocessing"
+data_path="${data_home}/pile_text_document"
 
 vocab_path="gpt2-vocab.json"
 if [ ! -f "$vocab_path" ]; then
@@ -213,13 +212,15 @@ fi
 if [ "${no_pp}" = "false" ]; then
     jobname="${jobname}_pp${pp_size}"
 fi
-jobname="${jobname}_seed${seed}_rebase"
+jobname="${jobname}_seed${seed}_rebase_megatron_checkpointing"
 
 username=$(whoami)
-output_home="output"
+output_home="/blob/users/${username}/project/data_efficient_gpt"
 log_path="${output_home}/log/"
 checkpoint_path="${output_home}/checkpoint/${jobname}"
-tensorboard_dir="${output_home}/tensorboard/"
+## Microsoft internal constraint: because tensorboard is logged by last rank,
+## it's better to put the path in NFS instead of Blob.
+tensorboard_dir="/vc_data/users/${username}/project/data_efficient_gpt/tensorboard/"
 tensorboard_path="${tensorboard_dir}${jobname}_${host}_${current_time}"
 mkdir -p ${log_path}
 mkdir -p ${checkpoint_path}
