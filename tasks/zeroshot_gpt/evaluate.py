@@ -11,7 +11,7 @@ from megatron import print_rank_0, is_last_rank
 from megatron import get_tokenizer
 from megatron.core import parallel_state, tensor_parallel
 from megatron.checkpointing import load_checkpoint
-from megatron.model import GPTModel
+from megatron.model import GPTModel, GPTModelPipe
 from megatron.training import get_model
 from megatron.arguments import core_transformer_config_from_args
 from megatron.utils import get_ltor_masks_and_position_ids, unwrap_model
@@ -24,6 +24,8 @@ from .datasets import build_dataset
 from torch.nn.parallel.distributed import DistributedDataParallel as torchDDP
 from megatron.model import DistributedDataParallel as LocalDDP
 from megatron.model import Float16Module
+
+import json
 
 def get_model_provider(eval_metric):
     """Based on evaluation metric set the parallel-output flag and
@@ -97,7 +99,7 @@ def forward_step(batch, model, eval_metric):
         # For loss, return the unreduced loss.
         if eval_metric == 'loss':
             losses = tensor_parallel.vocab_parallel_cross_entropy(
-                output.contiguous().float(), labels.contiguous())
+                output[0].contiguous().float(), labels.contiguous())
             loss = torch.sum(
                 losses.view(-1) * loss_mask.contiguous().view(-1).float())
             return loss
@@ -161,6 +163,16 @@ def evaluate_and_print_results(task, data_loader, model, eval_metric):
             string += 'adjusted ppl: {:.4E} | '.format(adjusted_ppl)
             string += 'token ratio: {} |'.format(token_ratio)
 
+            results = {
+                "loss": val_loss.item(),
+                "ppl": ppl,
+                "ajusted_ppl": adjusted_ppl,
+                "token_ratio": token_ratio
+            }
+
+            with open('./eval_results', 'w') as json_file:
+                json.dump(results, json_file)
+
         elif eval_metric == 'accuracy':
             num_examples = len(data_loader.dataset)
             acc = output / num_examples
@@ -176,8 +188,8 @@ def evaluate_and_print_results(task, data_loader, model, eval_metric):
         print('-' * length)
         print(string)
         print('-' * length)
-
-
+    
+    
 def main():
     """Main program."""
     args = get_args()
@@ -209,5 +221,6 @@ def main():
 
     # Run evaluation.
     evaluate_and_print_results(args.task, dataloader, model, eval_metric)
+    
 
     print_rank_0('done :-)')
