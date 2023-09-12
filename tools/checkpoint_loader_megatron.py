@@ -56,6 +56,9 @@ def _load_checkpoint(queue, args):
 
     margs = parse_args()
     margs, checkpoint_args = load_args_from_checkpoint(margs)
+    margs.tokenizer_model = "/mnt/dolphinfs/hdd_pool/docker/share/llama2_13b_base/tokenizer.model"
+    margs.force_ds_sequence_parallel = False
+    margs.normalization = 'rmsnorm'
 
     # Arguments do sanity checks on the world size, but we don't care,
     # so trick it into thinking we are plenty of processes
@@ -124,14 +127,15 @@ def _load_checkpoint(queue, args):
                     post_process = mpu.is_pipeline_last_stage()
                     this_model = model_provider(
                         pre_process=pre_process,
-                        post_process=post_process
+                        post_process=post_process,
+                        ckpt_transfer_model=True
                     ).to(dtype)
                     model_.append(this_model)
             else:
                 pre_process = mpu.is_pipeline_first_stage()
                 post_process = mpu.is_pipeline_last_stage()
                 model_rank = 0
-                model_ = [model_provider(pre_process, post_process).to(dtype)]
+                model_ = [model_provider(pre_process, post_process, ckpt_transfer_model=True).to(dtype)]
             margs.consumed_train_samples = 0
             margs.consumed_valid_samples = 0
             load_checkpoint(model_, None, None)
@@ -236,9 +240,11 @@ def _load_checkpoint(queue, args):
                 # Get non-parallel tensors from tp_rank 0
                 layer = models[0].language_model.encoder.layers[layer_num]
                 message["input layernorm weight"] = layer.input_layernorm.weight.data
-                message["input layernorm bias"] = layer.input_layernorm.bias.data
                 message["post layernorm weight"] = layer.post_attention_layernorm.weight.data
-                message["post layernorm bias"] = layer.post_attention_layernorm.bias.data
+                if margs.normalization != 'rmsnorm':
+                    message["input layernorm bias"] = layer.input_layernorm.bias.data
+                    message["post layernorm bias"] = layer.post_attention_layernorm.bias.data
+
                 if md.linear_bias:
                     message["dense bias"] = layer.self_attention.dense.bias.data
                     message["mlp l1 bias"] = layer.mlp.dense_4h_to_h.bias.data
@@ -291,8 +297,9 @@ def _load_checkpoint(queue, args):
     # Send final layernorm from tp_rank 0
     message = {
         "weight": models[0].language_model.encoder.final_layernorm.weight.data,
-        "bias": models[0].language_model.encoder.final_layernorm.bias.data
     }
+    if margs.normalization != 'rmsnorm':
+        message["bias"] = models[0].language_model.encoder.final_layernorm.bias.data
     queue_put("final layernorm", message)
 
     if md.output_layer:
@@ -334,3 +341,4 @@ def load_checkpoint(queue, args):
     except:
         queue.put("exit")
         raise
+

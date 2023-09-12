@@ -222,14 +222,17 @@ def save_checkpoint(iteration, model, optimizer, opt_param_scheduler):
     if not args.deepspeed:
         model = unwrap_model(model)
 
-    print_rank_0('saving checkpoint at iteration {:7d} to {}'.format(
+    print_rank_0('saving checkpoint at iteration {} to {}'.format(
         iteration, args.save))
 
     # Collect rng state across data parallel ranks.
     rng_state = get_rng_state()
 
     # Checkpoint name.
-    checkpoint_name = get_checkpoint_name(args.save, iteration)
+    if iteration == 'release':
+        checkpoint_name = get_checkpoint_name(args.save, iteration, release=True)
+    else:
+        checkpoint_name = get_checkpoint_name(args.save, iteration)
 
     # Save distributed optimizer's custom parameter state.
     if args.use_distributed_optimizer:
@@ -300,7 +303,7 @@ def save_checkpoint(iteration, model, optimizer, opt_param_scheduler):
     if torch.distributed.is_initialized():
         torch.distributed.barrier()
 
-    print_rank_0('  successfully saved checkpoint at iteration {:7d} to {}' \
+    print_rank_0('  successfully saved checkpoint at iteration {} to {}' \
                  .format(iteration, args.save))
 
     # And update the latest iteration
