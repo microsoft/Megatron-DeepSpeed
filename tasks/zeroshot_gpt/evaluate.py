@@ -9,7 +9,7 @@ import torch
 from megatron import get_args
 from megatron import print_rank_0, is_last_rank
 from megatron import get_tokenizer
-from megatron.core import parallel_state, tensor_parallel
+from megatron.core import parallel_state, tensor_parallel, mpu
 from megatron.checkpointing import load_checkpoint
 from megatron.model import GPTModel, GPTModelPipe
 from megatron.training import get_model
@@ -19,11 +19,19 @@ from megatron.p2p_communication import recv_forward, send_forward
 from tasks.finetune_utils import build_data_loader
 from deepspeed.accelerator import get_accelerator
 from .datasets import build_dataset
+from megatron.model.rotary_pos_embedding import apply_rotary_pos_emb, RotaryEmbedding
+
+from megatron.optimizer import get_megatron_optimizer
 
 # These are needed to unwrap the model, would be nice to put these in megatron.utils if possible?
 from torch.nn.parallel.distributed import DistributedDataParallel as torchDDP
 from megatron.model import DistributedDataParallel as LocalDDP
 from megatron.model import Float16Module
+
+import deepspeed
+from deepspeed.runtime.utils import see_memory_usage
+from deepspeed.accelerator.real_accelerator import get_accelerator
+from deepspeed.runtime.config import DeepSpeedConfig
 
 import json
 
@@ -45,8 +53,27 @@ def get_model_provider(eval_metric):
                                       'is not supported.'.format(eval_metric))
 
         print_rank_0('building GPT model ...')
-        model = GPTModel(config=config, num_tokentypes=0, parallel_output=parallel_output,
+        
+        args = get_args()
+        config = core_transformer_config_from_args(args)
+        if args.deepspeed:
+            with deepspeed.zero.Init(data_parallel_group=mpu.get_data_parallel_group(),
+                                    remote_device=None if args.remote_device == 'none' else args.remote_device,
+                                    config_dict_or_path=args.deepspeed_config,
+                                    enabled=args.zero_stage == 3,
+                                    mpu=mpu):
+            
+                model = GPTModel(
+                    config=config,
+                    num_tokentypes=0,
+                    parallel_output=True,
+                    pre_process=pre_process,
+                    post_process=post_process
+                )
+        else:
+            model = GPTModel(config=config, num_tokentypes=0, parallel_output=parallel_output,
                          pre_process=pre_process, post_process=post_process)
+                
 
         return model
 
@@ -88,9 +115,10 @@ def forward_step(batch, model, eval_metric):
     input_tensor = recv_forward()
 
     # Forward pass through the model.
-    unwrapped_model = unwrap_model(
-        model, (torchDDP, LocalDDP, Float16Module))
-    unwrapped_model.set_input_tensor(input_tensor)
+    if not args.deepspeed:
+        unwrapped_model = unwrap_model(
+            model, (torchDDP, LocalDDP, Float16Module))
+        unwrapped_model.set_input_tensor(input_tensor)
     output = model(tokens, position_ids, attention_mask)
 
     send_forward(output)
@@ -188,8 +216,7 @@ def evaluate_and_print_results(task, data_loader, model, eval_metric):
         print('-' * length)
         print(string)
         print('-' * length)
-    
-    
+
 def main():
     """Main program."""
     args = get_args()
@@ -208,6 +235,20 @@ def main():
 
     # Set up model and load checkpoint.
     model = get_model(get_model_provider(eval_metric), wrap_with_ddp=False)
+
+    if args.deepspeed:
+        optimizer = None
+        opt_param_scheduler = None
+        model, optimizer, _, opt_param_scheduler = deepspeed.initialize(
+                model=model[0],
+                model_parameters=model[0].parameters(),
+                optimizer=optimizer,
+                args=args,
+                lr_scheduler=opt_param_scheduler,
+                mpu=mpu if args.no_pipeline_parallel else None
+            )
+        model = [model]
+    
     if args.load is not None:
         _ = load_checkpoint(model, None, None)
 
@@ -224,3 +265,4 @@ def main():
     
 
     print_rank_0('done :-)')
+
