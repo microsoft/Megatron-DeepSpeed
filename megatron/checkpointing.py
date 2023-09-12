@@ -530,7 +530,7 @@ def load_checkpoint(model, optimizer, opt_param_scheduler, load_arg='load', stri
     load_dir = getattr(args, load_arg)
 
     if args.deepspeed:
-        if args.finetune:
+        if args.finetune or args.task == "WIKITEXT103":
             loaded_dir, state_dict = model[0].load_checkpoint(load_dir,
                 load_module_strict=strict, load_optimizer_states=False,
                 load_lr_scheduler_states=False, load_module_only=True)
