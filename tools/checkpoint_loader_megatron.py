@@ -56,9 +56,9 @@ def _load_checkpoint(queue, args):
 
     margs = parse_args()
     margs, checkpoint_args = load_args_from_checkpoint(margs)
-    margs.tokenizer_model = "/mnt/dolphinfs/hdd_pool/docker/share/llama2_13b_base/tokenizer.model"
-    margs.force_ds_sequence_parallel = False
-    margs.normalization = 'rmsnorm'
+    if args.tokenizer_model:
+        margs.tokenizer_model = args.tokenizer_model
+    margs.ckpt_transfer = True
 
     # Arguments do sanity checks on the world size, but we don't care,
     # so trick it into thinking we are plenty of processes

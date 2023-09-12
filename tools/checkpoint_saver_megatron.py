@@ -160,7 +160,6 @@ def save_checkpoint(queue, args):
             if getattr(margs, arg) != value:
                 print(f"Overwriting default {arg} value {getattr(margs, arg)} with value from checkpoint {value}.")
                 setattr(margs, arg, value)
-    margs.tokenizer_model = "/mnt/dolphinfs/hdd_pool/docker/share/llama2_13b_base/tokenizer.model"
 
     validate_args(margs)
 
@@ -168,6 +167,7 @@ def save_checkpoint(queue, args):
 
     # margs = megatron args
     margs = get_args()
+    margs.ckpt_transfer = True
 
     if hasattr(md, 'consumed_train_samples'):
         margs.consumed_train_samples = md.consumed_train_samples
