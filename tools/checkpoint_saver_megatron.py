@@ -162,13 +162,15 @@ def save_checkpoint(queue, args):
                 setattr(margs, arg, value)
 
     validate_args(margs)
-
+    margs.ckpt_transfer = True
+    if args.tokenizer_model:
+        margs.tokenizer_model = args.tokenizer_model
     set_global_variables(margs)
 
     # margs = megatron args
     margs = get_args()
-    margs.ckpt_transfer = True
 
+    print("args.tokenizer_model", args.tokenizer_model)
     if hasattr(md, 'consumed_train_samples'):
         margs.consumed_train_samples = md.consumed_train_samples
         margs.consumed_valid_samples = md.consumed_valid_samples

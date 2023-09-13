@@ -76,3 +76,24 @@ cd /hf/transformers
 python src/transformers/models/megatron_gpt2/convert_megatron_gpt2_checkpoint.py \
 /path/to/Megatron/checkpoint/iter_0097500/mp_rank_00/model_optim_rng.pt
 ```
+
+## HF Transformers to Megatron-DeepSpeed (currently only support LLama)
+
+In order to convert llama model from HF Transformers to Megatron-DeepSpeed, you can do this by two steps:
+
+```bash
+# 1. Convert llama weight from hf to megatron
+python tools/convert_checkpoint/transformers_to_megatron_llama.py \
+--out=/path/to/Megatron-Deepspeed/checkpoint/ \
+--cache-dir=/path/to/hf/transformers/llama_checkpoint
+
+# 2. Convert Megatron-DeepSpeed checkpoint to distributed version
+python3 tools/checkpoint_util.py   \
+--target-tensor-parallel-size 4 \
+--target-pipeline-parallel-size 2 \
+--load-dir /path/to/Megatron-Deepspeed/checkpoint/ \
+--save-dir /path/to/Megatron-Deepspeed/distribute_checkpoint/  \
+--model-type GPT
+```
+
+

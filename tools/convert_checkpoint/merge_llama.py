@@ -86,12 +86,9 @@ def merge_meta_llama(size: int, root_dir: Path):
     return merged_ckpt
 
 
-def merge_hf_llama(size: int, version: int, cache_dir: Optional[Path] = None, model_path=None, tokenizer_len=32000):
-    assert version == 2, "Only llama v2 available using huggingface"
-    print(cache_dir)
+def merge_hf_llama(cache_dir: Optional[Path] = None):
+    # assert version == 2, "Only llama v2 available using huggingface"
     model = LlamaForCausalLM.from_pretrained(cache_dir, cache_dir=cache_dir, local_files_only=True, use_safetensors=False)
-    # resize token embeddings size according saved tokenizer for model extend token size.
-    # model.resize_token_embeddings(tokenizer_len)
     weights = model.state_dict()
     weights["tok_embeddings.weight"] = weights.pop("model.embed_tokens.weight")
     weights["norm.weight"] = weights.pop("model.norm.weight")
@@ -110,12 +107,5 @@ def merge_hf_llama(size: int, version: int, cache_dir: Optional[Path] = None, mo
                 "post_attention_layernorm": "ffn_norm"
             }[rmatch.group(2)]
             weights[rmatch.group(1) + new_key + rmatch.group(3)] = weights.pop(key)
-    return weights
+    return weights, model.config
 
-
-def merge_llama(size: int, version: int, root_dir: Optional[Path] = None, tokenizer_len: Optional[int] = 32000):
-    if root_dir is not None and (root_dir/"consolidated.00.pth").exists():
-        return merge_meta_llama(size, root_dir), "meta"
-    print(f"Weights at {root_dir} do not look like a meta checkpoint, assuming "
-          "huggingface cache_dir instead")
-    return merge_hf_llama(size, version, root_dir, tokenizer_len), "hf"
