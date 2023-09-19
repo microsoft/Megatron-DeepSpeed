@@ -99,7 +99,7 @@ def _gather_along_first_dim(input_):
 
     output = torch.empty(dim_size, dtype=input_.dtype,
                          device=torch.cuda.current_device())
-    torch.distributed._all_gather_base(output, input_.contiguous(),
+    torch.distributed.all_gather_into_tensor(output, input_.contiguous(),
                                        group=get_tensor_model_parallel_group())
 
     return output
