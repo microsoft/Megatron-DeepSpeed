@@ -10,7 +10,6 @@ import json
 # The earliest we can measure the start time.
 _TRAIN_START_TIME = time.time()
 import torch
-import wandb
 from torch.nn.parallel.distributed import DistributedDataParallel as torchDDP
 
 from megatron import get_args
@@ -51,6 +50,12 @@ from deepspeed.runtime.data_pipeline.data_routing.helper import convert_to_rando
 from megatron.model.transformer import ParallelTransformerLayer
 
 from deepspeed import comm as dist
+
+try:
+    import wandb
+except (ImportError, ModuleNotFoundError):
+    wandb = None
+
 
 def print_datetime(string):
     """Note that this call will sync across all ranks."""
@@ -1010,7 +1015,7 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
         samples_per_sec_per_replica = samples_per_sec / args.data_parallel_size
         tokens_per_sec = samples_per_sec * seq_len
         tokens_per_sec_per_replica = tokens_per_sec / args.data_parallel_size
-        if wandb.run is not None:
+        if wandb is not None and getattr(wandb, 'run', None) is not None:
             tput = {
                 'throughput/iteration-time': elapsed_time_per_iteration,  # 1000 ms / s
                 'throughput/samples_per_sec': samples_per_sec,
