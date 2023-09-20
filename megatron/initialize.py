@@ -113,6 +113,9 @@ def _compile_dependencies():
     if not get_accelerator().device_name() == 'cuda':
         print(">fused kernel is only supported in cuda, skip loading fused kernel")
         return 
+
+    if args.use_dataset_only:
+        return
     # ==================
     # Load fused kernels
     # ==================
@@ -213,10 +216,11 @@ def _initialize_distributed():
     if args.deepspeed or args.ds_inference:
         deepspeed.init_distributed()
     else:
-        torch.distributed.init_process_group(
-            backend=args.distributed_backend,
-            world_size=args.world_size, rank=args.rank,
-            timeout=timedelta(minutes=args.distributed_timeout_minutes))
+        if not torch.distributed.is_initialized():
+            torch.distributed.init_process_group(
+                backend=args.distributed_backend,
+                world_size=args.world_size, rank=args.rank,
+                timeout=timedelta(minutes=args.distributed_timeout_minutes))
 
     # Set the tensor model-parallel, pipeline model-parallel, and
     # data-parallel communicators.
