@@ -288,10 +288,17 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
 
             all_gather_buffer = \
                 get_global_memory_buffer().get_tensor(dim_size, input.dtype, "mpu")
-            handle = torch.distributed.all_gather_into_tensor(
-                all_gather_buffer,
-                input,
-                group=get_tensor_model_parallel_group(), async_op=True)
+
+            if version.parse(torch.__version__) >= version.parse('1.13'):
+                handle = torch.distributed.all_gather_into_tensor(
+                    all_gather_buffer,
+                    input,
+                    group=get_tensor_model_parallel_group(), async_op=True)
+            else:
+                handle = torch.distributed._all_gather_base(
+                    all_gather_buffer,
+                    input,
+                    group=get_tensor_model_parallel_group(), async_op=True)
 
             # Here we rely on CUDA_DEVICE_MAX_CONNECTIONS=1 to ensure that the
             # gather is scheduled before the input gradient computation
