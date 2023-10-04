@@ -583,7 +583,22 @@ class _AutoTokenizer(AbstractTokenizer):
         return {v: k for k, v in self.vocab.items()}
 
     def tokenize(self, text):
-        return self.tokenizer.encode(text)
+        # HACK: this was hanging for very large inputs (>1M chars)
+        # chunking it into 100k chars max seems to make it much faster
+        # WARNING: this might be breaking tokenization every once in a while
+        CHUNK_MAX = 100000
+        if len(text) > CHUNK_MAX:
+            tokens = []
+            for i in range(0, len(text), CHUNK_MAX):
+                tokens += self.tokenizer.encode(text[i:i+CHUNK_MAX], add_special_tokens=False)
+            # add special tokens to beginning and end
+            if self.tokenizer.bos_token:
+                tokens = [self.tokenizer.bos_token_id] + tokens
+            if self.tokenizer.eos_token_id and self.tokenizer.add_eos_token:
+                tokens = tokens + [self.tokenizer.eos_token_id]
+            return tokens
+        else:
+            return self.tokenizer.encode(text)
 
     def detokenize(self, token_ids):
         return self.tokenizer.decode(token_ids)
