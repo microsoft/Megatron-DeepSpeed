@@ -10,7 +10,7 @@ from typing import Optional
 
 from megatron import get_timers, get_args, get_retro_args, core, get_num_microbatches
 from .module import MegatronModule
-from megatron.core import parallel_state, tensor_parallel
+from megatron.core import parallel_state, tensor_parallel, mpu
 from megatron.core.enums import ModelType
 from megatron.model import LayerNorm
 from megatron.model.enums import AttnMaskType, LayerType, AttnType
@@ -506,7 +506,8 @@ class ParallelAttention(MegatronModule):
         self.use_flash_attn_triton = args.use_flash_attn_triton
         if self.use_flash_attn:
             if args.use_flash_attn_v1:
-                assert flash_attn_unpadded_func != None, "Cannot import FlashAttention v1 "
+                assert flash_attn_unpadded_func != None or flash_attn_builder != None, ("Cannot import FlashAttention v1 "
+                                                                                        "and Cannot find FlashAttention Builder")
             if args.use_flash_attn_v2:
                 assert flash_attn_varlen_func != None, "Cannot import FlashAttention v2 "
             if args.use_flash_attn_triton:
@@ -1748,12 +1749,17 @@ class ParallelTransformer(MegatronModule):
                 moe_losses = []
                 for index in range(start, end):
                     layer = self._get_layer(index)
-                    x_, moe_loss = layer(x_, *args, **kwargs)
+                    output = layer(x_, *args, **kwargs)
+                    if isinstance(output, tuple):
+                        x_, moe_loss = output
+                    else:
+                        x_ = output
+                        moe_loss = torch.tensor(0.0, device=x_.device, dtype=x_.dtype, requires_grad=True)
                     moe_losses.append(moe_loss)
                 return (x_, *moe_losses)
             return custom_forward
         
-        if args.deepspeed:
+        if args.deepspeed and args.deepspeed_activation_checkpointing:
             moe_losses = []
             # Make sure memory is freed.
             tensor_parallel.reset_checkpointed_activations_memory_buffer()

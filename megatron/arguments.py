@@ -57,16 +57,13 @@ def parse_args(extra_args_provider=None, ignore_unknown_args=False):
     else:
         args = parser.parse_args()
 
-    # helper argument to set deepspeed pipeline parallel or not
-    args.ds_pipeline_enabled = not args.no_pipeline_parallel
-
     # Args from environment
     args.rank = int(os.getenv('RANK', '0'))
     args.world_size = int(os.getenv("WORLD_SIZE", '1'))
 
     return args
 
-def validate_args(args, defaults={}):
+def validate_args(args):
     # Tensor model parallel size.
     args.tensor_model_parallel_size = min(
         args.tensor_model_parallel_size, args.world_size)
@@ -93,7 +90,7 @@ def validate_args(args, defaults={}):
     model_parallel_size = args.pipeline_model_parallel_size * \
                           args.tensor_model_parallel_size * \
                           args.ds_sequence_parallel_size
-    assert args.world_size % model_parallel_size == 0, 'world size is not'\
+    assert args.world_size % model_parallel_size == 0, 'world size ({}) is not'\
         ' divisible by tensor parallel size ({}) times pipeline parallel ' \
         'size ({})'.format(args.world_size, args.tensor_model_parallel_size,
                            args.pipeline_model_parallel_size)
@@ -138,20 +135,7 @@ def validate_args(args, defaults={}):
         args.recompute_granularity = 'selective'
     del args.recompute_activations
 
-    # Set input defaults.
-    for key in defaults:
-        # For default to be valid, it should not be provided in the
-        # arguments that are passed to the program. We check this by
-        # ensuring the arg is set to None.
-        if getattr(args, key) is not None:
-            if args.rank == 0:
-                print('WARNING: overriding default arguments for {key}:{v} \
-                       with {key}:{v2}'.format(key=key, v=defaults[key],
-                                               v2=getattr(args, key)),
-                                               flush=True)
-        else:
-            setattr(args, key, defaults[key])
-
+    args.ds_pipeline_enabled = not args.no_pipeline_parallel
     # Batch size.
     assert args.micro_batch_size is not None
     assert args.micro_batch_size > 0
@@ -419,6 +403,9 @@ def validate_args(args, defaults={}):
 
     args.curriculum_learning_legacy = False
     args.compression_training = False
+
+    # FlashAttention
+    args.use_flash_attn = args.use_flash_attn_v1 or args.use_flash_attn_triton or args.use_flash_attn_v2
 
     # AML
     if args.aml_data_download_path is not None:
