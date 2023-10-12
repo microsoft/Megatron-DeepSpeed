@@ -589,10 +589,12 @@ class ParallelAttention(MegatronModule):
             local_attn = FlashSelfAttention(causal=True, attention_dropout=config.attention_dropout)
         else:
             local_attn = CoreAttention(self.layer_number, config, self.attn_mask_type)
-        if hasattr(args, 'ckpt_transfer') and args.ckpt_transfer:
-            self.enable_ds_sequence_parallel = False
-        else:
-            self.enable_ds_sequence_parallel = parallel_state.get_sequence_parallel_world_size() > 1 \
+        # if hasattr(args, 'ckpt_transfer') and args.ckpt_transfer:
+        #     self.enable_ds_sequence_parallel = False
+        # else:
+        #     self.enable_ds_sequence_parallel = parallel_state.get_sequence_parallel_world_size() > 1 \
+        #                                     or args.force_ds_sequence_parallel
+        self.enable_ds_sequence_parallel = parallel_state.get_sequence_parallel_world_size() > 1 \
                                             or args.force_ds_sequence_parallel
         if self.enable_ds_sequence_parallel:
             assert dist_attn_supported, 'Distributed attention is not supported in this DeepSpeed version'

@@ -94,6 +94,9 @@ python3 tools/checkpoint_util.py   \
 --load-dir /path/to/Megatron-Deepspeed/checkpoint/ \
 --save-dir /path/to/Megatron-Deepspeed/distribute_checkpoint/  \
 --model-type GPT
+
+# 3. Convert DeepSpeed to Huggingface transformers version
+python3 tools/convert_checkpoint/deepspeed_to_megatron_llama.py  \
+--input_dir  /path/to/Deepspeed/checkpoint/  \
+--output_dir /path/to//hf/transformers/checkpoint/
 ```
-
-
