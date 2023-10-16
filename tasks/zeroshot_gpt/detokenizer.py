@@ -65,3 +65,5 @@ def get_detokenizer(path):
     for key in _DETOKENIZERS.keys():
         if key in path:
             return _DETOKENIZERS[key]
+    # if no detokenizer is found, return identity function
+    return lambda x: x
