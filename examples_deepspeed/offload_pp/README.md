@@ -50,6 +50,10 @@ On the DeepSpeed side, we need to add follow configurations:
 
 Basically, we need to first enable CPU Offload. Then user can adjust the portion of parameter upading on CPU by adjusting `ratio` here. Its default value is 1, which means all parameter updates happen on CPU side. The above config example with ` "ratio" : 0.3` meaning 0-30% parameters are updating on CPU side, while the other 70% parameter updates happens on GPU side.
 
+#### Tuning suggestion on ratio
+
+To get best performance, we recommend to set this `ratio` value as low as possible without causing GPU memory Out-Ouf-Memory issue.
+
 One additional config on DeepSpeed side is 
 
 ```
