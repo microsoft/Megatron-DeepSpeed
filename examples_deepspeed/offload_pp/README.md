@@ -2,7 +2,7 @@
 
 This folder contains examples that demonstrate how to use the new ZeRO-Offload++ features. 
 
-Now ZeRO-Offload++ supports **Twin-Offload** feature.
+ZeRO-Offload++ now supports **Twin-Offload** feature.
 
 ## Twin-offload
 
