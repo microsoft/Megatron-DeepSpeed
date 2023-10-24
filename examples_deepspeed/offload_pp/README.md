@@ -26,7 +26,7 @@ Under `/tests/small_model_debugging/` folder, Run
 deepspeed partial_offload_test.py --zero 3
 ```
 
-### GPT-Training in Megatron-DeepSpeed
+### GPT Model Training in Megatron-DeepSpeed
 
 To enable **Twin-Offload** here, we need to add two flags for Megatron configs as follows: 
 
