@@ -16,7 +16,17 @@ As shown in above Figure, when ZeRO-Offload is triggered, **Twin-Offload** now a
 
 Now **Twin-Offload** can be used at ZeRO stage 3 with Offload. Below we provide two tutorial examples on how to use **Twin-Offload**.
 
-### Megatron-DeepSpeed
+### DeepSpeed Toy Example
+
+Here is a toy example for using **Twin-Offload** inside DeepSpeed reop. 
+
+Under `/tests/small_model_debugging/`, Run 
+
+```
+deepspeed partial_offload_test.py --zero 3
+```
+
+### GPT-Training in Megatron-DeepSpeed
 
 To enable **Twin-Offload** here, we need to add two flags for Megatron configs as follows: 
 
