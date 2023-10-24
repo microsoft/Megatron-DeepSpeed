@@ -18,7 +18,7 @@ Now **Twin-Offload** can be used at ZeRO stage 3 with Offload. Below we provide 
 
 ### DeepSpeed Toy Example
 
-Here is a toy example for using **Twin-Offload** inside DeepSpeed reop. 
+Here is a toy example for using **Twin-Offload** inside DeepSpeed repo. 
 
 Under `/tests/small_model_debugging/` folder, Run 
 
