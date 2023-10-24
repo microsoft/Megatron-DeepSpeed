@@ -20,13 +20,15 @@ Now **Twin-Offload** can be used at ZeRO stage 3 with Offload. Below we provide 
 
 To enable **Twin-Offload** here, we need to add two flags for Megatron configs as follows: 
 
+#### Megatron Configurations
 ```
 --no-pipeline-parallel \
 --cpu-optimizer \
 ```
 which have been added to `ds_pretrain_gpt_350M.sh`
 
-In addition, on the DeepSpeed side, we need to add follow configurations:
+#### DeepSpeed Configurations
+On the DeepSpeed side, we need to add follow configurations:
 
 ```
     "offload_optimizer": {
@@ -43,10 +45,23 @@ One additional config on DeepSpeed side is
 ```
   "prescale_gradients": false,
 ```
-mainly because right now ZeRO does not support prescale gradients.
+mainly because right now ZeRO-3 does not support prescale gradients.
 
+All above configs have been added to `ds_config_gpt_TEMPLATE.json`
+
+#### End-to-end Training
+
+To run a sample training of GPT-350M model using Megatron-Deepspeed, simply run as follows:
+
+```
+bash ds_pretrain_gpt_350M.sh
+```
+
+Now the training start running with **Twin-Offload**. Enjoy!
 
 ## On-going optimizations
+
+We have some other features inside ZeRO-Offload++ which will come soon, stay tuned!
 
 * Removing uncessary D2H memcpy in ZeRO-offload
 * On-the-fly fp16 to fp32 data casting inside CPUAdam
