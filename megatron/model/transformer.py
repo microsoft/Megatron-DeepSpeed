@@ -501,6 +501,7 @@ class ParallelAttention(MegatronModule):
             and self.attn_mask_type == AttnMaskType.causal
         self.use_flash_attn_triton = args.use_flash_attn_triton
         if self.use_flash_attn:
+            global flash_attn_builder
             try:
                 flash_attn_builder = FlashAttentionBuilder().load()
             except TypeError:
