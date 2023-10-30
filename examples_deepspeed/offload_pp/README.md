@@ -2,23 +2,23 @@
 
 This folder contains examples that demonstrate how to use the new ZeRO-Offload++ features. 
 
-ZeRO-Offload++ now supports **Twin-Offload** feature.
+ZeRO-Offload++ now supports **Twin-Flow** feature.
 
-## Twin-offload
+## Twin-Flow
 
-Instead of all-or-nothing offloading strategy, **Twin-Offload** allows a portion of data to run on CPU and the other part on GPU simultaneously. Thus, we not only mitigate the memory pressure on GPU side by offloading data to CPU, but also utilize both CPU and GPU computation resources more efficiently. 
+Instead of all-or-nothing offloading strategy, **Twin-Flow** allows a portion of data to run on CPU and the other part on GPU simultaneously. Thus, we not only mitigate the memory pressure on GPU side by offloading data to CPU, but also utilize both CPU and GPU computation resources more efficiently. 
 
-![twin-offload-img](./twin-offload.png)
+![Twin-Flow-img](./twin-offload.png)
 
-As shown in above Figure, when ZeRO-Offload is triggered, **Twin-Offload** now allow user to set a new configuration arguement called `ratio` (default value == 1) to adjust the portion of parameter updates on CPU optimizer. For example, if this `ratio==0.4`, it means 0-40% of parameters are updated using CPUAdam on CPU side, while the rest 60% parameters are updatedusing FusedAdam on GPU side.
+As shown in above Figure, when ZeRO-Offload is triggered, **Twin-Flow** now allow user to set a new configuration arguement called `ratio` (default value == 1) to adjust the portion of parameter updates on CPU optimizer. For example, if this `ratio==0.4`, it means 0-40% of parameters are updated using CPUAdam on CPU side, while the rest 60% parameters are updatedusing FusedAdam on GPU side.
 
 ## How to use
 
-Now **Twin-Offload** can be used at ZeRO stage 3 with Offload. Below we provide two tutorial examples on how to use **Twin-Offload**.
+Now **Twin-Flow** can be used at ZeRO stage 3 with Offload. Below we provide two tutorial examples on how to use **Twin-Flow**.
 
 ### DeepSpeed Toy Example
 
-Here is a toy example for using **Twin-Offload** inside DeepSpeed repo. 
+Here is a toy example for using **Twin-Flow** inside DeepSpeed repo. 
 
 Under `/tests/small_model_debugging/` folder, Run 
 
@@ -28,7 +28,7 @@ deepspeed partial_offload_test.py --zero 3
 
 ### GPT Model Training in Megatron-DeepSpeed
 
-To enable **Twin-Offload** here, we need to add two flags for Megatron configs as follows: 
+To enable **Twin-Flow** here, we need to add two flags for Megatron configs as follows: 
 
 #### Megatron Configurations
 ```
@@ -71,7 +71,7 @@ To run a sample training of GPT-350M model using Megatron-Deepspeed, simply run 
 bash ds_pretrain_gpt_350M.sh
 ```
 
-Now the training start running with **Twin-Offload**. Enjoy!
+Now the training start running with **Twin-Flow**. Enjoy!
 
 ## On-going optimizations
 
