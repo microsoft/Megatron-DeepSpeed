@@ -206,7 +206,7 @@ class GPTModel(MegatronModule):
             # Parameter that are sliced on the row dimension
             info[PARAMETER_WITH_ROW_PARALLELISM_PATTERNS] = [
                 r"\d+.mlp.dense_4h_to_h.weight",
-                r"\d+.mlp.self_attention.dense.weight",
+                r"\d+.self_attention.dense.weight",
             ]
 
         return info
@@ -372,7 +372,6 @@ class GPTModelPipe(PipelineModule,MegatronModule):
             # Parameter that are sliced on the row dimension
             info[PARAMETER_WITH_ROW_PARALLELISM_PATTERNS] = [
                 r"\d+.mlp.dense_4h_to_h.weight",
-                r"\d+.mlp.self_attention.dense.weight",
+                r"\d+.self_attention.dense.weight",
             ]
-
         return info
