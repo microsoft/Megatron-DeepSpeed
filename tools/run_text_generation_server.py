@@ -17,15 +17,32 @@ from megatron.arguments import core_transformer_config_from_args
 from megatron.text_generation_server import MegatronServer
 from megatron.text_generation import generate_and_post_process
 from megatron.text_generation import beam_search_and_post_process
+import deepspeed
 import torch
 
-def model_provider(pre_process=True, post_process=True):
+def model_provider(pre_process=True, post_process=True, use_deepspeed=True):
     """Build the model."""
-
-    config = core_transformer_config_from_args(get_args())
-
+    args = get_args()
+    config = core_transformer_config_from_args(args)
     print_rank_0('building GPT model ...')
-    model = GPTModel(config=config, num_tokentypes=0, parallel_output=False, pre_process=pre_process, post_process=post_process)
+    if args.deepspeed:
+        with deepspeed.zero.Init(data_parallel_group=mpu.get_data_parallel_group(),
+                                remote_device=None if args.remote_device == 'none' else args.remote_device,
+                                config_dict_or_path=args.deepspeed_config,
+                                enabled=args.zero_stage == 3,
+                                mpu=mpu):
+        
+            model = GPTModel(
+                config=config,
+                num_tokentypes=0,
+                parallel_output=True,
+                pre_process=pre_process,
+                post_process=post_process
+            )
+    else:
+        model = GPTModel(config=config, num_tokentypes=0, parallel_output=False,
+                     pre_process=pre_process, post_process=post_process)
+                
 
     return model
 
@@ -53,11 +70,24 @@ if __name__ == "__main__":
     if args.num_layers_per_virtual_pipeline_stage is not None:
         print("Interleaved pipeline schedule is not yet supported for text generation.")
         exit()
+
     # Set up model and load checkpoint
     model = get_model(model_provider, wrap_with_ddp=False)
+    if args.deepspeed:
+        optimizer = None
+        opt_param_scheduler = None
+        model, optimizer, _, opt_param_scheduler = deepspeed.initialize(
+                model=model[0],
+                model_parameters=model[0].parameters(),
+                optimizer=optimizer,
+                args=args,
+                lr_scheduler=opt_param_scheduler,
+                mpu=mpu if args.no_pipeline_parallel else None
+            )
+        model = [model]
 
     if args.load is not None:
-        _ = load_checkpoint(model, None, None)
+        _ = load_checkpoint(model, None, None, load_only_weights=True)
 
     assert len(model) == 1, "Above condition should have caught this"
     model = model[0]

@@ -384,7 +384,7 @@ def fix_query_key_value_ordering(model, checkpoint_version):
                     " checkpoint version {}".format(checkpoint_version))
 
 
-def _load_base_checkpoint(load_dir, rank0=False):
+def _load_base_checkpoint(load_dir, rank0=False, fixed_iteration=None):
     """ Load the base state_dict from the given directory
 
     If rank0 is true, just loads rank 0 checkpoint, ignoring arguments.
@@ -404,7 +404,9 @@ def _load_base_checkpoint(load_dir, rank0=False):
 
     # Otherwise, read the tracker file and either set the iteration or
     # mark it as a release checkpoint.
-    iteration, release = read_metadata(tracker_filename)
+    last_iteration, release = read_metadata(tracker_filename)
+    # load last iteration if fixed iteration is not set
+    iteration = fixed_iteration if fixed_iteration is not None else last_iteration
 
     # Checkpoint.
     if rank0:
@@ -520,7 +522,7 @@ def load_args_from_checkpoint(args, load_arg='load'):
     return args, checkpoint_args
 
 
-def load_checkpoint(model, optimizer, opt_param_scheduler, load_arg='load', strict=True, load_only_weights=False):
+def load_checkpoint(model, optimizer, opt_param_scheduler, load_arg='load', strict=True, load_only_weights=False, load_iteration=None):
     """Load a model checkpoint and return the iteration.
     strict (bool): whether to strictly enforce that the keys in
         :attr:`state_dict` of the checkpoint match the names of
@@ -530,12 +532,20 @@ def load_checkpoint(model, optimizer, opt_param_scheduler, load_arg='load', stri
     load_dir = getattr(args, load_arg)
 
     if args.deepspeed:
-        if args.finetune or ("task" in vars(args) and args.task == "WIKITEXT103"):
+        if load_iteration is not None:
+            print_rank_0("Will load checkpoint at iteration {}".format(load_iteration))
+            tag = "global_step{}".format(load_iteration)
+        else:
+            tag = None
+            
+        if load_only_weights or args.finetune or ("task" in vars(args) and args.task == "WIKITEXT103"):
             loaded_dir, state_dict = model[0].load_checkpoint(load_dir,
+                tag=tag,
                 load_module_strict=strict, load_optimizer_states=False,
                 load_lr_scheduler_states=False, load_module_only=True)
         else:
             loaded_dir, state_dict = model[0].load_checkpoint(load_dir,
+                tag=tag,
                 load_module_strict=strict)
         if loaded_dir is None:
             print_rank_0('WARNING: could not find the metadata file {} '.format(
@@ -543,11 +553,12 @@ def load_checkpoint(model, optimizer, opt_param_scheduler, load_arg='load', stri
             print_rank_0('    will not load any checkpoints and will start from '
                         'random')
             return 0
+        
         release = False
     else:
         model = unwrap_model(model)
 
-        state_dict, release = _load_base_checkpoint(load_dir, rank0=False)
+        state_dict, release = _load_base_checkpoint(load_dir, rank0=False, fixed_iteration=iteration)
 
         # Checkpoint not loaded.
         if state_dict is None:

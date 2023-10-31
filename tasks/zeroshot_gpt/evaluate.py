@@ -250,7 +250,7 @@ def main():
         model = [model]
     
     if args.load is not None:
-        _ = load_checkpoint(model, None, None)
+        _ = load_checkpoint(model, None, None, load_iteration=args.load_iteration)
 
     assert len(model) == 1, "Above condition should have caught this"
     model = model[0]

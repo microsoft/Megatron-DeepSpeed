@@ -601,6 +601,7 @@ class _AutoTokenizer(AbstractTokenizer):
             return self.tokenizer.encode(text)
 
     def detokenize(self, token_ids):
+        # extract string from HF 
         return self.tokenizer.decode(token_ids)
 
     @property
