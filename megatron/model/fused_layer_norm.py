@@ -10,6 +10,7 @@ from torch.nn.parameter import Parameter
 from torch.nn import init
 import importlib
 from torch.nn import functional as F
+import inspect
 
 from megatron.core.utils import make_viewless_tensor
 
@@ -85,7 +86,12 @@ class MixedFusedLayerNorm(torch.nn.Module):
         return F.layer_norm(input, self.normalized_shape, weight, self.bias, self.eps)
 
     if self.no_persist_layer_norm:
-        return FusedLayerNormAffineFunction.apply(input, weight, self.bias, self.normalized_shape, self.eps, self.mem_efficient_ln)
+        # Apex does not have versions yet (https://github.com/NVIDIA/apex/pull/1648), so we need to inspect 
+        # the function manually on whether the extra arg introduced in https://github.com/NVIDIA/apex/pull/1715 exists yet
+        if 'memory_efficient' in inspect.getfullargspec(FusedLayerNormAffineFunction.forward).args:
+            return FusedLayerNormAffineFunction.apply(input, weight, self.bias, self.normalized_shape, self.eps, self.mem_efficient_ln)
+        else:
+            return FusedLayerNormAffineFunction.apply(input, weight, self.bias, self.normalized_shape, self.eps)
     else:
         output = FastLayerNormFN.apply(input, weight, self.bias, self.eps)
 
