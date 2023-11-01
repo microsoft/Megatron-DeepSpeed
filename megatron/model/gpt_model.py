@@ -190,8 +190,6 @@ class GPTModel(MegatronModule):
 
             # Parameter slices that should be averaged not concatenated.
             info[TP_REPLICATED_PARAMETER_PATTERNS] = [
-                r"tied_modules.embed.word_embeddings.norm.weight",
-                r"tied_modules.embed.word_embeddings.norm.bias",
                 r"tied_modules.embed.position_embeddings.weight",
                 r"\d+.input_layernorm.weight",
                 r"\d+.input_layernorm.bias",
@@ -356,8 +354,6 @@ class GPTModelPipe(PipelineModule,MegatronModule):
 
             # Parameter slices that should be averaged not concatenated.
             info[TP_REPLICATED_PARAMETER_PATTERNS] = [
-                r"tied_modules.embed.word_embeddings.norm.weight",
-                r"tied_modules.embed.word_embeddings.norm.bias",
                 r"tied_modules.embed.position_embeddings.weight",
                 r"\d+.input_layernorm.weight",
                 r"\d+.input_layernorm.bias",
