@@ -47,12 +47,8 @@ try:
 except ImportError:
     flash_attn_varlen_func = None
 
-
 FlashAttentionBuilder = get_accelerator().get_op_builder("FlashAttentionBuilder")
-try:
-    flash_attn_builder = FlashAttentionBuilder().load()
-except TypeError:
-    flash_attn_builder = None
+flash_attn_builder = None
 
 try:
     from apex.normalization import MixedFusedRMSNorm
@@ -505,6 +501,12 @@ class ParallelAttention(MegatronModule):
             and self.attn_mask_type == AttnMaskType.causal
         self.use_flash_attn_triton = args.use_flash_attn_triton
         if self.use_flash_attn:
+            global flash_attn_builder
+            try:
+                flash_attn_builder = FlashAttentionBuilder().load()
+            except TypeError:
+                flash_attn_builder = None
+
             if args.use_flash_attn_v1:
                 assert flash_attn_unpadded_func != None or flash_attn_builder != None, ("Cannot import FlashAttention v1 "
                                                                                         "and Cannot find FlashAttention Builder")
@@ -917,7 +919,8 @@ class ParallelTransformerLayer(MegatronModule):
                     eps=config.layernorm_epsilon,
                     no_persist_layer_norm=args.no_persist_layer_norm,
                     sequence_parallel=config.sequence_parallel,
-                    apply_layernorm_1p=args.apply_layernorm_1p)
+                    apply_layernorm_1p=args.apply_layernorm_1p,
+                    mem_efficient_ln=not args.disable_mem_efficient_ln)
             else:
                 self.input_layernorm = LayerNorm(
                     config.hidden_size,
@@ -942,7 +945,8 @@ class ParallelTransformerLayer(MegatronModule):
                     eps=config.layernorm_epsilon,
                     no_persist_layer_norm=not config.persist_layer_norm,
                     sequence_parallel=config.sequence_parallel,
-                    apply_layernorm_1p=args.apply_layernorm_1p)
+                    apply_layernorm_1p=args.apply_layernorm_1p,
+                    mem_efficient_ln=not args.disable_mem_efficient_ln)
             else:
                 self.post_attention_layernorm = LayerNorm(
                     config.hidden_size,
@@ -965,7 +969,8 @@ class ParallelTransformerLayer(MegatronModule):
                     eps=config.layernorm_epsilon,
                     no_persist_layer_norm=not config.persist_layer_norm,
                     sequence_parallel=config.sequence_parallel,
-                    apply_layernorm_1p=args.apply_layernorm_1p)
+                    apply_layernorm_1p=args.apply_layernorm_1p,
+                    mem_efficient_ln=not args.disable_mem_efficient_ln)
             else:
                 self.post_inter_attention_layernorm = MixedFusedRMSNorm(config.hidden_size, config.layernorm_epsilon)
 
@@ -1724,7 +1729,8 @@ class ParallelTransformer(MegatronModule):
                         eps=config.layernorm_epsilon,
                         no_persist_layer_norm=args.no_persist_layer_norm,
                         sequence_parallel=config.sequence_parallel,
-                        apply_layernorm_1p=args.apply_layernorm_1p)
+                        apply_layernorm_1p=args.apply_layernorm_1p,
+                        mem_efficient_ln=not args.disable_mem_efficient_ln)
                 else:
                     self.final_layernorm = LayerNorm(
                         config.hidden_size,
