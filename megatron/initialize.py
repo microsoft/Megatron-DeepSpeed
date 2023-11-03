@@ -23,6 +23,9 @@ from megatron.model.fused_bias_gelu import bias_gelu
 from megatron.utils import is_rank_0
 from deepspeed.accelerator import get_accelerator
 import deepspeed
+from deepspeed.ops.op_builder.builder import OpBuilder
+
+is_rocm_pytorch = OpBuilder.is_rocm_pytorch()
 
 
 def initialize_megatron(extra_args_provider=None, args_defaults={},
@@ -41,12 +44,23 @@ def initialize_megatron(extra_args_provider=None, args_defaults={},
 
     # Parse arguments
     args = parse_args(extra_args_provider, ignore_unknown_args)
+    # Set input args.
+    for key in args_defaults:
+        # The args_defaults is for those who want to set default value or pass parameters when
+        # calling Python functions. Instead of using arguments passed in from outside the program.
+        if args.rank == 0:
+            print('INFO: overriding default arguments for {key}:{v} \
+                   with {key}:{v2}'.format(key=key, v=getattr(args, key),
+                                           v2=args_defaults[key]),
+                                           flush=True)
+        setattr(args, key, args_defaults[key])
+
 
     if args.use_checkpoint_args or args_defaults.get('use_checkpoint_args', False):
         assert args.load is not None, '--use-checkpoints-args requires --load argument'
         load_args_from_checkpoint(args)
 
-    validate_args(args, args_defaults)
+    validate_args(args)
         
     # set global args, build tokenizer, and set adlr-autoresume,
     # tensorboard-writer, and timers.
@@ -110,6 +124,9 @@ def _compile_dependencies():
     if not get_accelerator().device_name() == 'cuda':
         print(">fused kernel is only supported in cuda, skip loading fused kernel")
         return 
+
+    if args.use_dataset_only:
+        return
     # ==================
     # Load fused kernels
     # ==================
@@ -179,10 +196,6 @@ def setup_deepspeed_random_and_activation_checkpointing(args):
         synchronize=args.synchronize_each_layer,
         profile=args.profile_backward)
 
-    mpu.checkpoint = deepspeed.checkpointing.checkpoint
-    mpu.get_cuda_rng_tracker = deepspeed.checkpointing.get_cuda_rng_tracker
-    mpu.model_parallel_cuda_manual_seed = deepspeed.checkpointing.model_parallel_cuda_manual_seed
-
 
 def _initialize_distributed():
     """Initialize torch.distributed and core model parallel."""
@@ -214,10 +227,11 @@ def _initialize_distributed():
     if args.deepspeed or args.ds_inference:
         deepspeed.init_distributed()
     else:
-        torch.distributed.init_process_group(
-            backend=args.distributed_backend,
-            world_size=args.world_size, rank=args.rank,
-            timeout=timedelta(minutes=args.distributed_timeout_minutes))
+        if not torch.distributed.is_initialized():
+            torch.distributed.init_process_group(
+                backend=args.distributed_backend,
+                world_size=args.world_size, rank=args.rank,
+                timeout=timedelta(minutes=args.distributed_timeout_minutes))
 
     # Set the tensor model-parallel, pipeline model-parallel, and
     # data-parallel communicators.
@@ -225,8 +239,16 @@ def _initialize_distributed():
         if mpu.model_parallel_is_initialized():
             print('model parallel is already initialized')
         else:
+            if args.ds_sequence_parallel_size > 1 and args.sequence_parallel:
+                raise RuntimeError(
+                    f"sequence_parallel_size > 1 enables DeepSpeed's sequence parallel, "
+                    f"which is not compatible with Megatron-LM's sequence parallel. "
+                    f"Remove --sequence_parallel to use DeepSpeed's sequence parallel."
+                )
+
             mpu.initialize_model_parallel(args.tensor_model_parallel_size,
                                            args.pipeline_model_parallel_size,
+                                           args.ds_sequence_parallel_size,
                                            args.virtual_pipeline_model_parallel_size,
                                            args.pipeline_model_parallel_split_rank,
                                            use_distributed_optimizer=args.use_distributed_optimizer)
@@ -293,18 +315,14 @@ def set_jit_fusion_options():
     # flags required to enable jit fusion kernels
     TORCH_MAJOR = int(torch.__version__.split('.')[0])
     TORCH_MINOR = int(torch.__version__.split('.')[1])
-    if (TORCH_MAJOR > 1) or (TORCH_MAJOR == 1 and TORCH_MINOR >= 10):
+    if ((TORCH_MAJOR > 1) or (TORCH_MAJOR == 1 and TORCH_MINOR >= 10)) and not is_rocm_pytorch:
         # nvfuser
         torch._C._jit_set_profiling_executor(True)
         torch._C._jit_set_profiling_mode(True)
         torch._C._jit_override_can_fuse_on_cpu(False)
         torch._C._jit_override_can_fuse_on_gpu(False)
         torch._C._jit_set_texpr_fuser_enabled(False)
-        try:
-            torch._C._jit_set_nvfuser_enabled(True)
-        except:
-            # catch error thrown on ROCm systems
-            pass
+        torch._C._jit_set_nvfuser_enabled(True)
         torch._C._debug_set_autodiff_subgraph_inlining(False)
     else:
         # legacy pytorch fuser
@@ -329,7 +347,7 @@ def _warmup_jit_function():
     # Warmup fused bias+gelu
     bias = torch.rand(args.ffn_hidden_size // args.tensor_model_parallel_size,
                       dtype=dtype, device='cuda')
-    input = torch.rand((args.seq_length, args.micro_batch_size,
+    input = torch.rand((args.seq_length // args.ds_sequence_parallel_size, args.micro_batch_size,
                         args.ffn_hidden_size // args.tensor_model_parallel_size),
                        dtype=dtype, device='cuda')
     # Warmup JIT fusions with the input grad_enable state of both forward
@@ -345,9 +363,9 @@ def _warmup_jit_function():
         seq_length = args.seq_length // mpu.get_tensor_model_parallel_world_size()
     else:
         seq_length = args.seq_length
-    input = torch.rand((seq_length, args.micro_batch_size, args.hidden_size),
+    input = torch.rand((seq_length // args.ds_sequence_parallel_size, args.micro_batch_size, args.hidden_size),
                        dtype=dtype, device='cuda')
-    residual = torch.rand((seq_length, args.micro_batch_size, args.hidden_size),
+    residual = torch.rand((seq_length // args.ds_sequence_parallel_size, args.micro_batch_size, args.hidden_size),
                           dtype=dtype, device='cuda')
     bias = torch.rand((args.hidden_size), dtype=dtype, device='cuda').expand_as(residual)
     dropout_rate = 0.1

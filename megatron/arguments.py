@@ -9,6 +9,7 @@ import os
 import torch
 import deepspeed
 import types
+from packaging import version
 
 import torch.nn.functional as F
 from megatron.global_vars import set_retro_args, get_retro_args
@@ -56,16 +57,13 @@ def parse_args(extra_args_provider=None, ignore_unknown_args=False):
     else:
         args = parser.parse_args()
 
-    # helper argument to set deepspeed pipeline parallel or not
-    args.ds_pipeline_enabled = not args.no_pipeline_parallel
-
     # Args from environment
     args.rank = int(os.getenv('RANK', '0'))
     args.world_size = int(os.getenv("WORLD_SIZE", '1'))
 
     return args
 
-def validate_args(args, defaults={}):
+def validate_args(args):
     # Tensor model parallel size.
     args.tensor_model_parallel_size = min(
         args.tensor_model_parallel_size, args.world_size)
@@ -85,18 +83,25 @@ def validate_args(args, defaults={}):
     if args.no_pipeline_parallel:
         assert args.pipeline_model_parallel_size == 1, \
             "pipeline_model_parallel_size must be 1 if pipeline parallel is disabled"
+        
+    if args.ds_sequence_parallel_size > 1:
+        assert version.parse(deepspeed.__version__) >= version.parse("0.10.2"), "sequence parallelism requires DeepSpeed version 0.10.2+"
+
     model_parallel_size = args.pipeline_model_parallel_size * \
-                          args.tensor_model_parallel_size
-    assert args.world_size % model_parallel_size == 0, 'world size is not'\
+                          args.tensor_model_parallel_size * \
+                          args.ds_sequence_parallel_size
+    assert args.world_size % model_parallel_size == 0, 'world size ({}) is not'\
         ' divisible by tensor parallel size ({}) times pipeline parallel ' \
         'size ({})'.format(args.world_size, args.tensor_model_parallel_size,
                            args.pipeline_model_parallel_size)
     args.data_parallel_size = args.world_size // model_parallel_size
     if args.rank == 0:
         print('using world size: {}, data-parallel-size: {}, '
+              'sequence-parallel size: {}, '
               'tensor-model-parallel size: {}, '
               'pipeline-model-parallel size: {} '.format(
                   args.world_size, args.data_parallel_size,
+                  args.ds_sequence_parallel_size,
                   args.tensor_model_parallel_size,
                   args.pipeline_model_parallel_size), flush=True)
     if args.pipeline_model_parallel_size > 1:
@@ -130,20 +135,7 @@ def validate_args(args, defaults={}):
         args.recompute_granularity = 'selective'
     del args.recompute_activations
 
-    # Set input defaults.
-    for key in defaults:
-        # For default to be valid, it should not be provided in the
-        # arguments that are passed to the program. We check this by
-        # ensuring the arg is set to None.
-        if getattr(args, key) is not None:
-            if args.rank == 0:
-                print('WARNING: overriding default arguments for {key}:{v} \
-                       with {key}:{v2}'.format(key=key, v=defaults[key],
-                                               v2=getattr(args, key)),
-                                               flush=True)
-        else:
-            setattr(args, key, defaults[key])
-
+    args.ds_pipeline_enabled = not args.no_pipeline_parallel
     # Batch size.
     assert args.micro_batch_size is not None
     assert args.micro_batch_size > 0
@@ -254,31 +246,34 @@ def validate_args(args, defaults={}):
             'cannot have both num-layers and encoder-num-layers specified'
         args.encoder_num_layers = args.num_layers
     else:
-        assert args.encoder_num_layers is not None, \
-            'either num-layers or encoder-num-layers should be specified'
-        args.num_layers = args.encoder_num_layers
+        if not args.use_dataset_only:
+            assert args.encoder_num_layers is not None, \
+                'either num-layers or encoder-num-layers should be specified'
+            args.num_layers = args.encoder_num_layers
 
     # Check required arguments.
-    required_args = ['num_layers', 'hidden_size', 'num_attention_heads',
-                     'max_position_embeddings']
-    for req_arg in required_args:
-        _check_arg_is_not_none(args, req_arg)
+    if not args.use_dataset_only:
+        required_args = ['num_layers', 'hidden_size', 'num_attention_heads',
+                         'max_position_embeddings']
+        for req_arg in required_args:
+            _check_arg_is_not_none(args, req_arg)
 
-    # Checks.    
-    if args.ffn_hidden_size is None:
-        if args.swiglu:
-            # reduce the dimnesion for MLP since projections happens on
-            # two linear layers. this keeps the number of paramters in
-            # the same ballpark as the counterpart with 4*h size
-            # we keep it a multiple of 64, which means the actual tensor size
-            # will be a multiple of 64 / tp_size
-            args.ffn_hidden_size = int((4 * args.hidden_size * 2 / 3) / 64) * 64
-        else:
-            args.ffn_hidden_size = 4 * args.hidden_size
+    # Checks.
+    if not args.use_dataset_only:
+        if args.ffn_hidden_size is None:
+            if args.swiglu:
+                # reduce the dimnesion for MLP since projections happens on
+                # two linear layers. this keeps the number of paramters in
+                # the same ballpark as the counterpart with 4*h size
+                # we keep it a multiple of 64, which means the actual tensor size
+                # will be a multiple of 64 / tp_size
+                args.ffn_hidden_size = int((4 * args.hidden_size * 2 / 3) / 64) * 64
+            else:
+                args.ffn_hidden_size = 4 * args.hidden_size
 
-    if args.kv_channels is None:
-        assert args.hidden_size % args.num_attention_heads == 0
-        args.kv_channels = args.hidden_size // args.num_attention_heads
+        if args.kv_channels is None:
+            assert args.hidden_size % args.num_attention_heads == 0
+            args.kv_channels = args.hidden_size // args.num_attention_heads
 
     if args.seq_length is not None:
         assert args.encoder_seq_length is None
@@ -287,10 +282,11 @@ def validate_args(args, defaults={}):
         assert args.encoder_seq_length is not None
         args.seq_length = args.encoder_seq_length
 
-    if args.seq_length is not None:
-        assert args.max_position_embeddings >= args.seq_length
-    if args.decoder_seq_length is not None:
-        assert args.max_position_embeddings >= args.decoder_seq_length
+    if not args.use_dataset_only:
+        if args.seq_length is not None:
+            assert args.max_position_embeddings >= args.seq_length
+        if args.decoder_seq_length is not None:
+            assert args.max_position_embeddings >= args.decoder_seq_length
     # When rotary position embeddings is used, set add_position_embedding
     # to false to turn off absolute position embedding.
     if args.use_rotary_position_embeddings:
@@ -306,14 +302,15 @@ def validate_args(args, defaults={}):
         assert args.fp16 or args.bf16, \
             'residual connection in fp32 only supported when using fp16 or bf16.'
 
-    if args.weight_decay_incr_style == 'constant':
-        assert args.start_weight_decay is None
-        assert args.end_weight_decay is None
-        args.start_weight_decay = args.weight_decay
-        args.end_weight_decay = args.weight_decay
-    else:
-        assert args.start_weight_decay is not None
-        assert args.end_weight_decay is not None
+    if not args.use_dataset_only:
+        if args.weight_decay_incr_style == 'constant':
+            assert args.start_weight_decay is None
+            assert args.end_weight_decay is None
+            args.start_weight_decay = args.weight_decay
+            args.end_weight_decay = args.weight_decay
+        else:
+            assert args.start_weight_decay is not None
+            assert args.end_weight_decay is not None
 
     TORCH_MAJOR = int(torch.__version__.split('.')[0])
     TORCH_MINOR = int(torch.__version__.split('.')[1])
@@ -377,15 +374,16 @@ def validate_args(args, defaults={}):
     if args.deepspeed:
         args.async_tensor_model_parallel_allreduce = False
 
-    if os.environ.get('CUDA_DEVICE_MAX_CONNECTIONS') != "1":
-        if args.sequence_parallel:
-            raise RuntimeError(
-                "Using sequence parallelism requires setting the environment variable "
-                "CUDA_DEVICE_MAX_CONNECTIONS to 1")
-        if args.async_tensor_model_parallel_allreduce:
-            raise RuntimeError(
-                "Using async gradient all reduce requires setting the environment "
-                "variable CUDA_DEVICE_MAX_CONNECTIONS to 1")
+    if not args.use_dataset_only:
+        if os.environ.get('CUDA_DEVICE_MAX_CONNECTIONS') != "1":
+            if args.sequence_parallel:
+                raise RuntimeError(
+                    "Using sequence parallelism requires setting the environment variable "
+                    "CUDA_DEVICE_MAX_CONNECTIONS to 1")
+            if args.async_tensor_model_parallel_allreduce:
+                raise RuntimeError(
+                    "Using async gradient all reduce requires setting the environment "
+                    "variable CUDA_DEVICE_MAX_CONNECTIONS to 1")
 
     # Disable bias gelu fusion if we are disabling bias altogether
     if not args.add_bias_linear:
@@ -406,6 +404,9 @@ def validate_args(args, defaults={}):
     args.curriculum_learning_legacy = False
     args.compression_training = False
 
+    # FlashAttention
+    args.use_flash_attn = args.use_flash_attn_v1 or args.use_flash_attn_triton or args.use_flash_attn_v2
+
     # AML
     if args.aml_data_download_path is not None:
         data_paths = []
@@ -414,15 +415,16 @@ def validate_args(args, defaults={}):
         args.data_path = data_paths
 
     # GQA
-    if args.num_key_value_heads is None:
-        args.num_key_value_heads = args.num_attention_heads
-    assert args.num_attention_heads % args.num_key_value_heads == 0, \
-        f"num_attention_heads must be divisible by num_key_value_heads (got `num_attention_heads`: {args.num_attention_heads} " \
-        f"and `num_key_value_heads`: {args.num_key_value_heads})."
-    if args.num_key_value_heads != args.num_attention_heads:
-        # if GQA
-        assert not args.mos, 'GQA currently does not support args.mos'
-        assert not args.kd, 'GQA currently does not support args.kd'
+    if not args.use_dataset_only:
+        if args.num_key_value_heads is None:
+            args.num_key_value_heads = args.num_attention_heads
+        assert args.num_attention_heads % args.num_key_value_heads == 0, \
+            f"num_attention_heads must be divisible by num_key_value_heads (got `num_attention_heads`: {args.num_attention_heads} " \
+            f"and `num_key_value_heads`: {args.num_key_value_heads})."
+        if args.num_key_value_heads != args.num_attention_heads:
+            # if GQA
+            assert not args.mos, 'GQA currently does not support args.mos'
+            assert not args.kd, 'GQA currently does not support args.kd'
 
     # Print arguments.
     _print_args("arguments", args)
@@ -624,6 +626,9 @@ def _add_network_size_args(parser):
     group.add_argument('--apply-layernorm-1p', action='store_true',
                        help='Adjust LayerNorm weights such that they are centered '
                        'around zero. This improves numerical stability.')
+    group.add_argument('--disable-mem-efficient-ln', action='store_false', 
+                       help='Disable the memory-efficient fused LayerNorm optimization '
+                       'introduced in https://github.com/NVIDIA/apex/pull/1715')
     group.add_argument('--apply-residual-connection-post-layernorm',
                        action='store_true',
                        help='If set, use original BERT residula connection '
@@ -875,9 +880,14 @@ def _add_training_args(parser):
     group.add_argument('--create-moe-param-group', action='store_true',
                        help='Create separate groups for MoE params.'
                        'This is necessary for techniques like ZeRO.')
-    group.add_argument('--use-flash-attn', action='store_true',
-                       help='use FlashAttention implementation of attention. '
+    group.add_argument('--use-flash-attn', '--use-flash-attn-v1', dest='use_flash_attn_v1', action='store_true',
+                       help='use first version FlashAttention implementation of attention. '
                        'https://arxiv.org/abs/2205.14135')
+    group.add_argument('--use-flash-attn-v2', action='store_true',
+                       help='use second version FlashAttention implementation of attention. '
+                       'https://arxiv.org/abs/2307.08691')
+    group.add_argument('--use-flash-attn-triton', action='store_true',
+                       help='use FlashAttention implementation of attention using Triton.')
     group.add_argument('--disable-bias-linear', action='store_false',
                        help='Disable bias in the linear layers',
                        dest='add_bias_linear')
@@ -912,12 +922,18 @@ def _add_training_args(parser):
                        'check persist_ln_hidden_sizes if your hidden '
                        'size is supported.')
     group.add_argument('--sequence-parallel', action='store_true',
-                       help='Enable sequence parallel optimization.')
+                       help='Enable Megatron-LM\'s sequence parallel optimization.')
+    group.add_argument('--ds-sequence-parallel-size', type=int, default=1,
+                       help='Enable DeepSpeed\'s sequence parallel. Cannot be combined with "--sequence-parallel", which enables Megatron-LM\'s sequence parallel.')
+    group.add_argument('--force-ds-sequence-parallel', action='store_true',
+                       help='use DeepSpeed sequence parallelism regardless of sequence parallel size.')
     group.add_argument('--no-gradient-accumulation-fusion',
                        action='store_false',
                        help='Disable fusing gradient accumulation to weight '
                        'gradient computation of linear layers',
                        dest='gradient_accumulation_fusion')
+    group.add_argument('--use-dataset-only', type=bool, required=False, default=False,
+                       help='If set to True, only use the megatron dataset for external trainer ')
     return parser
 
 
@@ -1029,7 +1045,8 @@ def _add_checkpointing_args(parser):
                        help="If '--load' is set, but checkpoint is not found "
                        "(e.g., path typo), then exit instead of random "
                        "initialization.")
-
+    group.add_argument('--universal-checkpoint', action='store_true',
+                        help='Loading a universal format checkpoint.')
     return parser
 
 

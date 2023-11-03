@@ -7,6 +7,7 @@ import math
 import os
 from typing import Optional, Callable
 import warnings
+from packaging import version
 
 import torch
 import torch.nn.functional as F
@@ -212,6 +213,27 @@ class VocabParallelEmbedding(torch.nn.Module):
         return output
 
 
+class SequenceParallelPositionEmbedding(torch.nn.Module):
+    """Embedding parallelized in the sequence dimension.
+
+    Arguments:
+        sequence_length: max sequence length.
+        embedding_dim: size of hidden state.
+    """
+
+    def __init__(self, sequence_length, embedding_dim):
+        super(SequenceParallelPositionEmbedding, self).__init__()
+        sequence_parallel_size = get_tensor_model_parallel_world_size()
+        assert sequence_length % sequence_parallel_size == 0
+        local_sequence_length = sequence_length // sequence_parallel_size
+        self.offset = local_sequence_length * get_tensor_model_parallel_rank()
+        self.local_embeddings = torch.nn.Embedding(
+            local_sequence_length, embedding_dim)
+
+    def forward(self, position_ids):
+        return self.local_embeddings(position_ids - self.offset)
+
+
 class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
     """See linear_with_grad_accumulation_and_async_allreduce"""
 
@@ -232,10 +254,18 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
 
             all_gather_buffer = \
                 get_global_memory_buffer().get_tensor(dim_size, input.dtype, "mpu")
-            torch.distributed._all_gather_base(
-                all_gather_buffer,
-                input,
-                group=get_tensor_model_parallel_group())
+
+            if version.parse(torch.__version__) >= version.parse('1.13'):
+                torch.distributed.all_gather_into_tensor(
+                    all_gather_buffer,
+                    input,
+                    group=get_tensor_model_parallel_group())
+            else:
+                torch.distributed._all_gather_base(
+                    all_gather_buffer,
+                    input,
+                    group=get_tensor_model_parallel_group())
+
             total_input = all_gather_buffer
         else:
             total_input = input
@@ -258,10 +288,17 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
 
             all_gather_buffer = \
                 get_global_memory_buffer().get_tensor(dim_size, input.dtype, "mpu")
-            handle = torch.distributed._all_gather_base(
-                all_gather_buffer,
-                input,
-                group=get_tensor_model_parallel_group(), async_op=True)
+
+            if version.parse(torch.__version__) >= version.parse('1.13'):
+                handle = torch.distributed.all_gather_into_tensor(
+                    all_gather_buffer,
+                    input,
+                    group=get_tensor_model_parallel_group(), async_op=True)
+            else:
+                handle = torch.distributed._all_gather_base(
+                    all_gather_buffer,
+                    input,
+                    group=get_tensor_model_parallel_group(), async_op=True)
 
             # Here we rely on CUDA_DEVICE_MAX_CONNECTIONS=1 to ensure that the
             # gather is scheduled before the input gradient computation

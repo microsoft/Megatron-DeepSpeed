@@ -1,9 +1,11 @@
 #!/bin/bash
+
 dir=`pwd`
 ###############################################################################
 ### Main configs
 ## GPT-3 models use 2K sequence length/context window
-seq_len=2048
+n_k=2
+seq_len=$(( 1024 * $n_k ))
 
 ## The "GPT-3 XXX" below are configs from GPT-3 paper
 ## https://arxiv.org/abs/2005.14165, choose based on
@@ -47,14 +49,14 @@ seq_len=2048
 # init_std=0.015
 
 ## GPT-3 XL 1.3B
-model_size=1.3
-num_layers=24
-hidden_size=2048
-num_attn_heads=16
-global_batch_size=512
-lr=2.0e-4
-min_lr=1.0e-6
-init_std=0.013
+# model_size=1.3
+# num_layers=24
+# hidden_size=2048
+# num_attn_heads=16
+# global_batch_size=2
+# lr=2.0e-4
+# min_lr=1.0e-6
+# init_std=0.013
 
 ## GPT-3 2.7B
 # model_size=2.7
@@ -85,6 +87,16 @@ init_std=0.013
 # lr=1.0e-4
 # min_lr=1.0e-6
 # init_std=0.008
+
+## GPT-3 30B
+model_size=30
+num_layers=64
+hidden_size=6144
+num_attn_heads=64
+global_batch_size=2
+lr=1.0e-4
+min_lr=1.0e-6
+init_std=0.008
 
 ## GPT-3 175B
 # model_size=175
@@ -131,7 +143,10 @@ lr_decay_style="cosine"
 ###############################################################################
 ### Parallelism configs
 ## Model parallelism, 1 is no MP
-mp_size=2
+mp_size=32
+
+## Sequence parallelism, 0 is no SP, 1 enable SP
+enable_sequence_parallel=1
 
 ## Pipeline parallelism. To disable PP, set pp_size to 1 and no_pp to true.
 ## Note that currently both curriculum learning and random-LTD are NOT
@@ -154,7 +169,8 @@ dp_size=$(( ${num_gpus} / ${pp_size} / ${mp_size} ))
 ## Make sure that batch_size <= global_batch_size*pp_size*mp_size/num_gpus
 ## Reduce it manually if GPU OOM
 # batch_size=$(( ${global_batch_size} / ${dp_size} ))
-batch_size=2
+batch_size=1
+
 ###############################################################################
 ### Misc configs
 log_interval=10
@@ -164,7 +180,8 @@ eval_interval=100
 # checkpoint will be saved every 5% of training. For longer training you would
 # want larger num_save to save more frequently, and vice versa.
 num_save=100
-estimated_train_iter=$((${train_tokens} / ${seq_len} / ${global_batch_size}))
+# estimated_train_iter=$((${train_tokens} / ${seq_len} / ${global_batch_size}))
+estimated_train_iter=6
 # save_interval=$((${estimated_train_iter} / ${num_save}))
 save_interval=100
 
@@ -182,17 +199,19 @@ host="${HOSTNAME}"
 seed=1234
 num_workers=0
 
-## Public the Pile dataset, can be downloaded at
-## https://mystic.the-eye.eu/public/AI/pile_neox/ or 
-## https://the-eye.eu/public/AI/pile_neox/ Change data_home to where you
-## store the pile_text_document.bin and pile_text_document.idx.
-data_home="/vc_data_blob/users/conglli/the_pile_public_merged_nopreprocessing"
-data_path="${data_home}/pile_text_document"
+data_path="BookCorpusDataset_text_document"
+if [ ! -f "BookCorpusDataset_text_document.bin" ]; then
+    wget https://the-eye.eu/public/AI/pile_neox/data/BookCorpusDataset_text_document.bin
+fi
+if [ ! -f "BookCorpusDataset_text_document.idx" ]; then
+    wget https://the-eye.eu/public/AI/pile_neox/data/BookCorpusDataset_text_document.idx
+fi
 
 vocab_path="gpt2-vocab.json"
 if [ ! -f "$vocab_path" ]; then
     wget https://s3.amazonaws.com/models.huggingface.co/bert/gpt2-vocab.json
 fi
+
 merge_path="gpt2-merges.txt"
 if [ ! -f "$merge_path" ]; then
     wget https://s3.amazonaws.com/models.huggingface.co/bert/gpt2-merges.txt
@@ -215,12 +234,10 @@ fi
 jobname="${jobname}_seed${seed}_rebase"
 
 username=$(whoami)
-output_home="/blob/users/${username}/project/data_efficient_gpt"
+output_home="output"
 log_path="${output_home}/log/"
 checkpoint_path="${output_home}/checkpoint/${jobname}"
-## Microsoft internal constraint: because tensorboard is logged by last rank,
-## it's better to put the path in NFS instead of Blob.
-tensorboard_dir="/vc_data/users/${username}/project/data_efficient_gpt/tensorboard/"
+tensorboard_dir="${output_home}/tensorboard/"
 tensorboard_path="${tensorboard_dir}${jobname}_${host}_${current_time}"
 mkdir -p ${log_path}
 mkdir -p ${checkpoint_path}
@@ -239,6 +256,7 @@ megatron_options=" \
     --adam-beta1 0.9 \
     --adam-beta2 0.95 \
     --tensor-model-parallel-size ${mp_size} \
+    --pipeline-model-parallel-size ${pp_size} \
     --init-method-std ${init_std} \
     --lr-decay-tokens ${lr_decay_tokens} \
     --lr-warmup-tokens ${lr_warmup_tokens} \
@@ -269,11 +287,20 @@ megatron_options=" \
     --load ${checkpoint_path} \
     --save ${checkpoint_path} \
     --no-async-tensor-model-parallel-allreduce \
+    --use-flash-attn-triton \
     --tensorboard-queue-size 1 \
     --log-timers-to-tensorboard \
     --log-batch-size-to-tensorboard \
     --log-validation-ppl-to-tensorboard \
     --tensorboard-dir ${tensorboard_path}"
+
+if [[ "$enable_sequence_parallel" == 1 ]]; then
+megatron_options="\
+    --sequence-parallel \
+    ${megatron_options}"
+
+export CUDA_DEVICE_MAX_CONNECTIONS=1
+fi
 
 if [ "${activation_checkpoint}" = "true" ]; then
 megatron_options="${megatron_options} \
@@ -329,4 +356,5 @@ if [[ $iteration -gt 0 ]]; then
     ds_ssh "echo $iteration_2 > $iteration_file_2"
 fi
 
-deepspeed ${dir}/../../pretrain_gpt.py ${megatron_options} ${data_options} ${deepspeed_options} &>> ${log_path}/${jobname}_${host}_${current_time}.log
+# Since mp_size=32 involving multi-node compute resources. Users may need to specify hostfile via "--hostfile=myhostfile" command line option.
+deepspeed ${dir}/../../../pretrain_gpt.py ${megatron_options} ${data_options} ${deepspeed_options} 2>&1 | tee ${log_path}/${jobname}_${host}_${current_time}.log

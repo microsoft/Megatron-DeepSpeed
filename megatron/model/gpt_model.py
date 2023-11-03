@@ -5,7 +5,7 @@
 import torch
 
 from megatron import get_args
-from megatron.core import mpu, tensor_parallel
+from megatron.core import mpu, tensor_parallel, sequence_parallel
 from .module import MegatronModule, fp32_to_float16, float16_to_fp32
 
 from .enums import AttnMaskType
@@ -24,6 +24,17 @@ try:
 except ImportError:
     MixedFusedRMSNorm = None
 
+try:         
+    from deepspeed.checkpoint import (
+        VOCABULARY_PARAMETER_PATTERNS,
+        PIPELINE_REPLICATED_PARAMETER_PATTERNS,
+        TP_REPLICATED_PARAMETER_PATTERNS,
+        PARAMETER_WITH_ROW_PARALLELISM_PATTERNS,
+    )
+    DS_UNIVERSAL_CHECKPOINT_INFO = True 
+except ImportError:
+    DS_UNIVERSAL_CHECKPOINT_INFO = False  
+
 
 def post_language_model_processing(lm_output, labels, logit_weights,
                                    parallel_output,
@@ -41,11 +52,13 @@ def post_language_model_processing(lm_output, labels, logit_weights,
     else:
         # [b s] => [s b]
         labels = labels.transpose(0,1).contiguous()
+        cross_entropy = sequence_parallel.vocab_sequence_parallel_cross_entropy if mpu.get_sequence_parallel_world_size() > 1 \
+            else tensor_parallel.vocab_parallel_cross_entropy
         if fp16_lm_cross_entropy:
             assert output.dtype == torch.half
-            loss = tensor_parallel.vocab_parallel_cross_entropy(output, labels)
+            loss = cross_entropy(output, labels)
         else:
-            loss = tensor_parallel.vocab_parallel_cross_entropy(output.float(), labels)
+            loss = cross_entropy(output.float(), labels)
 
         # [s b] => [b, s]
         loss = loss.transpose(0,1).contiguous()
@@ -167,7 +180,37 @@ class GPTModel(MegatronModule):
             state_dict["moe_state_dict"] = moe_state_dict
         self.language_model.load_state_dict(state_dict, strict=strict)
 
+    def universal_checkpoint_info(self):
+        info = dict()
+        if DS_UNIVERSAL_CHECKPOINT_INFO:
+            # Vocabulary parameters (embeddings) that require special handling due to padding.
+            info[VOCABULARY_PARAMETER_PATTERNS] = [
+                r"tied_modules.embed.word_embeddings.weight"
+            ]
 
+            # Parameter slices that should be averaged not concatenated.
+            info[TP_REPLICATED_PARAMETER_PATTERNS] = [
+                r"tied_modules.embed.word_embeddings.norm.weight",
+                r"tied_modules.embed.word_embeddings.norm.bias",
+                r"tied_modules.embed.position_embeddings.weight",
+                r"\d+.input_layernorm.weight",
+                r"\d+.input_layernorm.bias",
+                r"\d+.post_attention_layernorm.weight",
+                r"\d+.post_attention_layernorm.bias",
+                r"\d+.self_attention.dense.bias",
+                r"\d+.mlp.dense_4h_to_h.bias",
+                r"\d+.weight",
+                r"\d+.bias",
+            ]
+
+            # Parameter that are sliced on the row dimension
+            info[PARAMETER_WITH_ROW_PARALLELISM_PATTERNS] = [
+                r"\d+.mlp.dense_4h_to_h.weight",
+                r"\d+.mlp.self_attention.dense.weight",
+            ]
+
+        return info
+    
 def CrossEntropy(output, labels):
     labels, loss_mask = labels[0], labels[1]
 
@@ -280,6 +323,9 @@ class GPTModelPipe(PipelineModule,MegatronModule):
 
         if args.checkpoint_activations:
             interval = args.checkpoint_num_layers
+        elif args.recompute_granularity == "full" and args.recompute_method == 'uniform':
+            # deepspeed's pipeline doesn't support the block recompute method
+            interval = args.recompute_num_layers
         else:
             interval = 0
 
@@ -293,3 +339,40 @@ class GPTModelPipe(PipelineModule,MegatronModule):
                          topology=topo,
                          activation_checkpoint_interval=interval,
                          partition_method='type:transformer')
+
+    def universal_checkpoint_info(self):
+        info = dict()
+        if DS_UNIVERSAL_CHECKPOINT_INFO:
+            # Vocabulary parameters (embeddings) that require special handling due to padding.
+            info[VOCABULARY_PARAMETER_PATTERNS] = [
+                r"tied_modules.embed.word_embeddings.weight"
+            ]
+
+            # Replicated (shared) parameters on the pipeline dimension
+            info[PIPELINE_REPLICATED_PARAMETER_PATTERNS] = [
+                r"tied_modules.embed.word_embeddings.weight",
+                r"tied_modules.embed.position_embeddings.weight"
+            ]
+
+            # Parameter slices that should be averaged not concatenated.
+            info[TP_REPLICATED_PARAMETER_PATTERNS] = [
+                r"tied_modules.embed.word_embeddings.norm.weight",
+                r"tied_modules.embed.word_embeddings.norm.bias",
+                r"tied_modules.embed.position_embeddings.weight",
+                r"\d+.input_layernorm.weight",
+                r"\d+.input_layernorm.bias",
+                r"\d+.post_attention_layernorm.weight",
+                r"\d+.post_attention_layernorm.bias",
+                r"\d+.self_attention.dense.bias",
+                r"\d+.mlp.dense_4h_to_h.bias",
+                r"\d+.weight",
+                r"\d+.bias",
+            ]
+
+            # Parameter that are sliced on the row dimension
+            info[PARAMETER_WITH_ROW_PARALLELISM_PATTERNS] = [
+                r"\d+.mlp.dense_4h_to_h.weight",
+                r"\d+.mlp.self_attention.dense.weight",
+            ]
+
+        return info

@@ -3,7 +3,7 @@ dir=`pwd`
 ###############################################################################
 ### Main configs
 ## GPT-3 models use 2K sequence length/context window
-seq_len=2048
+seq_len=32768
 
 ## The "GPT-3 XXX" below are configs from GPT-3 paper
 ## https://arxiv.org/abs/2005.14165, choose based on
@@ -51,7 +51,7 @@ model_size=1.3
 num_layers=24
 hidden_size=2048
 num_attn_heads=16
-global_batch_size=512
+global_batch_size=2
 lr=2.0e-4
 min_lr=1.0e-6
 init_std=0.013
@@ -131,7 +131,11 @@ lr_decay_style="cosine"
 ###############################################################################
 ### Parallelism configs
 ## Model parallelism, 1 is no MP
-mp_size=2
+## Currently we only support MP=1 with SP>1
+mp_size=1
+
+## Sequence parallelism, 1 is no SP
+sp_size=4
 
 ## Pipeline parallelism. To disable PP, set pp_size to 1 and no_pp to true.
 ## Note that currently both curriculum learning and random-LTD are NOT
@@ -140,7 +144,7 @@ pp_size=1
 no_pp="true"
 
 ## ZeRO-based data parallelism, stage=0 will disable ZeRO
-zero_stage=0
+zero_stage=1
 
 ## Total number of GPUs. ds_ssh is from DeepSpeed library.
 num_gpus=$(($(ds_ssh nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)-2))
@@ -148,13 +152,14 @@ num_gpus_pernode=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 num_node=$(( ${num_gpus} / ${num_gpus_pernode} ))
 
 ## Data parallel size.
-dp_size=$(( ${num_gpus} / ${pp_size} / ${mp_size} ))
+dp_size=$(( ${num_gpus} / ${pp_size} / ${mp_size} / ${sp_size} ))
 
 ## Micro batch size per GPU
 ## Make sure that batch_size <= global_batch_size*pp_size*mp_size/num_gpus
 ## Reduce it manually if GPU OOM
 # batch_size=$(( ${global_batch_size} / ${dp_size} ))
-batch_size=2
+batch_size=1
+
 ###############################################################################
 ### Misc configs
 log_interval=10
@@ -182,12 +187,13 @@ host="${HOSTNAME}"
 seed=1234
 num_workers=0
 
-## Public the Pile dataset, can be downloaded at
-## https://mystic.the-eye.eu/public/AI/pile_neox/ or 
-## https://the-eye.eu/public/AI/pile_neox/ Change data_home to where you
-## store the pile_text_document.bin and pile_text_document.idx.
-data_home="/vc_data_blob/users/conglli/the_pile_public_merged_nopreprocessing"
-data_path="${data_home}/pile_text_document"
+data_path="BookCorpusDataset_text_document"
+if [ ! -f "BookCorpusDataset_text_document.bin" ]; then
+    wget https://the-eye.eu/public/AI/pile_neox/data/BookCorpusDataset_text_document.bin
+fi
+if [ ! -f "BookCorpusDataset_text_document.idx" ]; then
+    wget https://the-eye.eu/public/AI/pile_neox/data/BookCorpusDataset_text_document.idx
+fi
 
 vocab_path="gpt2-vocab.json"
 if [ ! -f "$vocab_path" ]; then
@@ -206,6 +212,9 @@ if [[ $zero_stage -gt 0 ]]; then
     jobname="${jobname}_z${zero_stage}"
     prescale_grad="false"
 fi
+if [[ $sp_size -gt 1 ]]; then
+    jobname="${jobname}_sp${sp_size}"
+fi
 if [[ $mp_size -gt 1 ]]; then
     jobname="${jobname}_mp${mp_size}"
 fi
@@ -215,12 +224,10 @@ fi
 jobname="${jobname}_seed${seed}_rebase"
 
 username=$(whoami)
-output_home="/blob/users/${username}/project/data_efficient_gpt"
+output_home="output"
 log_path="${output_home}/log/"
 checkpoint_path="${output_home}/checkpoint/${jobname}"
-## Microsoft internal constraint: because tensorboard is logged by last rank,
-## it's better to put the path in NFS instead of Blob.
-tensorboard_dir="/vc_data/users/${username}/project/data_efficient_gpt/tensorboard/"
+tensorboard_dir="${output_home}/tensorboard/"
 tensorboard_path="${tensorboard_dir}${jobname}_${host}_${current_time}"
 mkdir -p ${log_path}
 mkdir -p ${checkpoint_path}
@@ -238,7 +245,8 @@ megatron_options=" \
     --override-opt_param-scheduler \
     --adam-beta1 0.9 \
     --adam-beta2 0.95 \
-    --tensor-model-parallel-size ${mp_size} \
+    --tensor-model-parallel-size 1 \
+    --ds-sequence-parallel-size ${sp_size} \
     --init-method-std ${init_std} \
     --lr-decay-tokens ${lr_decay_tokens} \
     --lr-warmup-tokens ${lr_warmup_tokens} \
@@ -269,6 +277,7 @@ megatron_options=" \
     --load ${checkpoint_path} \
     --save ${checkpoint_path} \
     --no-async-tensor-model-parallel-allreduce \
+    --use-flash-attn-triton \
     --tensorboard-queue-size 1 \
     --log-timers-to-tensorboard \
     --log-batch-size-to-tensorboard \
@@ -329,4 +338,4 @@ if [[ $iteration -gt 0 ]]; then
     ds_ssh "echo $iteration_2 > $iteration_file_2"
 fi
 
-deepspeed ${dir}/../../pretrain_gpt.py ${megatron_options} ${data_options} ${deepspeed_options} &>> ${log_path}/${jobname}_${host}_${current_time}.log
+deepspeed ${dir}/../../pretrain_gpt.py ${megatron_options} ${data_options} ${deepspeed_options} 2>&1 | tee ${log_path}/${jobname}_${host}_${current_time}.log
