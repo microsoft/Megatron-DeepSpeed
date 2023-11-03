@@ -193,8 +193,11 @@ def get_args():
     group.add_argument('--tokenizer-type', type=str, required=True,
                        choices=['BertWordPieceLowerCase','BertWordPieceCase',
                                 'GPT2BPETokenizer', 'SentencePieceTokenizer',
-                                'GPTSentencePieceTokenizer', 'NullTokenizer'],
+                                'GPTSentencePieceTokenizer', 'HFAutoTokenizer',
+                                'NullTokenizer'],
                        help='What type of tokenizer to use.')
+    group.add_argument('--hf_autotokenizer_model', type=str, default=None,
+                       help='Name of HF tokenizer')
     group.add_argument('--tokenizer-model', type=str, default=None,
                        help='YTTM tokenizer model.')
     group.add_argument('--vocab-file', type=str, default=None,
@@ -259,6 +262,8 @@ def check_files_exist(in_ss_out_names, key, num_partitions):
 def main():
     args = get_args()
 
+    tokenizer = build_tokenizer(args)
+
     if args.split_sentences:
         if nltk_available:
             nltk.download("punkt", quiet=True)
@@ -290,6 +295,7 @@ def main():
         split_sentences_present = check_files_exist(in_ss_out_names, 'sentence_split', args.partitions)
 
         if not partitions_present and not split_sentences_present:
+            print("Creating partitions...")
             # populate .jsonl partition files from parent files
             partitioned_input_files = []
             for idx in range(args.partitions):
@@ -358,7 +364,6 @@ def main():
     output_bin_files = {}
     output_idx_files = {}
     builders = {}
-    tokenizer = build_tokenizer(args)
 
     for key in args.json_keys:
         output_bin_files[key] = "{}_{}_{}.bin".format(args.output_prefix,
