@@ -1183,6 +1183,8 @@ def _add_data_args(parser):
                        '1) a single data path, 2) multiple datasets in the'
                        'form: dataset1-weight dataset1-path dataset2-weight '
                        'dataset2-path ...')
+    group.add_argument('--multiple-valid-sets', action='store_true',
+                       help='multiple separated validation steps')            
     group.add_argument('--test-data-path', nargs='*', default=None,
                        help='Path to the test dataset. Accepted format:'
                        '1) a single data path, 2) multiple datasets in the'

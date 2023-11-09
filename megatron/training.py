@@ -11,6 +11,8 @@ import json
 _TRAIN_START_TIME = time.time()
 import torch
 from torch.nn.parallel.distributed import DistributedDataParallel as torchDDP
+from collections.abc import Mapping
+
 
 from megatron import get_args
 from megatron import get_signal_handler
@@ -1341,32 +1343,71 @@ def evaluate_and_print_results(prefix, forward_step_func,
     else:
         writer = None
 
-    total_loss_dict, collected_non_loss_data = evaluate(
-        forward_step_func, data_iterator, model,
-        process_non_loss_data_func, config, verbose)
-    string = ' validation loss at {} | '.format(prefix)
-    for key in total_loss_dict:
-        string += '{} value: {:.6E} | '.format(key, total_loss_dict[key].item())
-        ppl = math.exp(min(20, total_loss_dict[key].item()))
-        string += '{} PPL: {:.6E} | '.format(key, ppl)
-        if writer and is_last_rank():
-            data_type = 'test' if test else 'validation'
-            writer.add_scalar(f'lm-loss-validation/{key} {data_type}',
-                              total_loss_dict[key].item(),
-                              iteration)
-            writer.add_scalar(f'lm-loss-validation/{key} {data_type} vs samples',
-                              total_loss_dict[key].item(),
-                              args.consumed_train_samples)
-            writer.add_scalar(f'lm-loss-validation/{key} {data_type} vs tokens',
-                              total_loss_dict[key].item(),
-                              args.consumed_train_tokens)
-            if args.log_validation_ppl_to_tensorboard:
-                writer.add_scalar(f'lm-loss-validation/{key} {data_type} ppl', ppl,
-                                  iteration)
-                writer.add_scalar(f'lm-loss-validation/{key} {data_type} ppl vs samples',
-                                  ppl, args.consumed_train_samples)
-                writer.add_scalar(f'lm-loss-validation/{key} {data_type} ppl vs tokens',
-                                  ppl, args.consumed_train_tokens)
+    if isinstance(data_iterator, Mapping):
+        total_loss_dict=dict()
+        collected_non_loss_data=dict()
+        for name in data_iterator.keys():
+            total_loss_dict[name], collected_non_loss_data[name] = evaluate(
+                forward_step_func, data_iterator[name], model,
+                process_non_loss_data_func, config, verbose)
+    else:
+        total_loss_dict, collected_non_loss_data = evaluate(
+            forward_step_func, data_iterator, model,
+            process_non_loss_data_func, config, verbose)
+    
+    if isinstance(data_iterator, Mapping):
+        string = ''
+        for name in data_iterator.keys():
+            string += 'dataset ' + name + ' | '
+            string += 'validation loss at {} | '.format(prefix)
+            for key in total_loss_dict[name]:
+                string += '{} value: {:.6E} | '.format(key, total_loss_dict[name][key].item())
+                ppl = math.exp(min(20, total_loss_dict[name][key].item()))
+                string += '{} PPL: {:.6E} | '.format(key, ppl)
+                if writer and is_last_rank():
+                    data_type = 'test' if test else 'validation'
+                    writer.add_scalar(f'{name}/lm-loss-validation/{key} {data_type}',
+                                    total_loss_dict[name][key].item(),
+                                    iteration)
+                    writer.add_scalar(f'{name}/lm-loss-validation/{key} {data_type} vs samples',
+                                    total_loss_dict[name][key].item(),
+                                    args.consumed_train_samples)
+                    writer.add_scalar(f'{name}/lm-loss-validation/{key} {data_type} vs tokens',
+                                    total_loss_dict[name][key].item(),
+                                    args.consumed_train_tokens)
+                    if args.log_validation_ppl_to_tensorboard:
+                        writer.add_scalar(f'{name}/lm-loss-validation/{key} {data_type} ppl', ppl,
+                                        iteration)
+                        writer.add_scalar(f'{name}/lm-loss-validation/{key} {data_type} ppl vs samples',
+                                        ppl, args.consumed_train_samples)
+                        writer.add_scalar(f'{name}/lm-loss-validation/{key} {data_type} ppl vs tokens',
+                                        ppl, args.consumed_train_tokens)
+            string+='\n'
+    
+    else:
+        string = ' validation loss at {} | '.format(prefix)
+        for key in total_loss_dict:
+            string += '{} value: {:.6E} | '.format(key, total_loss_dict[key].item())
+            ppl = math.exp(min(20, total_loss_dict[key].item()))
+            string += '{} PPL: {:.6E} | '.format(key, ppl)
+            if writer and is_last_rank():
+                data_type = 'test' if test else 'validation'
+                writer.add_scalar(f'lm-loss-validation/{key} {data_type}',
+                                total_loss_dict[key].item(),
+                                iteration)
+                writer.add_scalar(f'lm-loss-validation/{key} {data_type} vs samples',
+                                total_loss_dict[key].item(),
+                                args.consumed_train_samples)
+                writer.add_scalar(f'lm-loss-validation/{key} {data_type} vs tokens',
+                                total_loss_dict[key].item(),
+                                args.consumed_train_tokens)
+                if args.log_validation_ppl_to_tensorboard:
+                    writer.add_scalar(f'lm-loss-validation/{key} {data_type} ppl', ppl,
+                                    iteration)
+                    writer.add_scalar(f'lm-loss-validation/{key} {data_type} ppl vs samples',
+                                    ppl, args.consumed_train_samples)
+                    writer.add_scalar(f'lm-loss-validation/{key} {data_type} ppl vs tokens',
+                                    ppl, args.consumed_train_tokens)
 
     if process_non_loss_data_func is not None and writer and is_last_rank():
         process_non_loss_data_func(collected_non_loss_data, iteration, writer)
@@ -1438,8 +1479,15 @@ def build_train_valid_test_data_loaders(
         # Build dataloders.
         train_dataloader = build_pretraining_data_loader(
             train_ds, args.consumed_train_samples)
-        valid_dataloader = build_pretraining_data_loader(
-            valid_ds, args.consumed_valid_samples)
+        if args.multiple_valid_sets:
+            valid_dataloader=dict()
+            for name in valid_ds.keys():
+                valid_dataloader[name] = build_pretraining_data_loader(
+                    valid_ds[name], args.consumed_valid_samples)
+        else:
+            valid_dataloader = build_pretraining_data_loader(
+                valid_ds, args.consumed_valid_samples)
+
         test_dataloader = build_pretraining_data_loader(test_ds, 0)
 
         # Flags to know if we need to do training/validation/testing.
@@ -1485,7 +1533,13 @@ def build_train_valid_test_data_iterators(
         train_data_iterator = None
 
     if valid_dataloader is not None:
-        valid_data_iterator = iter(valid_dataloader) if dl_type == 'single' \
+        if args.multiple_valid_sets:
+            valid_data_iterator=dict()
+            for name in valid_dataloader.keys():
+                valid_data_iterator[name] = iter(valid_dataloader[name]) if dl_type == 'single' \
+                              else iter(cyclic_iter(valid_dataloader[name]))
+        else:
+            valid_data_iterator = iter(valid_dataloader) if dl_type == 'single' \
                               else iter(cyclic_iter(valid_dataloader))
     else:
         valid_data_iterator = None

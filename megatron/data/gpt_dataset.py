@@ -14,6 +14,7 @@ from megatron.core import mpu
 from megatron.data.blendable_dataset import BlendableDataset
 from megatron.data.dataset_utils import get_datasets_weights_and_num_samples
 from megatron.data.dataset_utils import get_train_valid_test_split_
+from megatron.data.dataset_utils import get_valid_datasets
 from megatron.data.indexed_dataset import make_dataset as make_indexed_dataset
 
 
@@ -22,11 +23,11 @@ def build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
                                     seq_length, seed, skip_warmup,
                                     train_data_prefix=None,
                                     valid_data_prefix=None,
+                                    multiple_valid_sets=False,
                                     test_data_prefix=None,
                                     return_doc_ids=False, *,
                                     data_cache_path=None):
     """Build train, valid, and test datasets."""
-
     if data_prefix:
         print_rank_0("Single data path provided for train, valid & test")
 
@@ -96,7 +97,20 @@ def build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
                                           data_cache_path=data_cache_path)
 
         if valid_data_prefix is not None:
-            valid_dataset = build_dataset("valid", valid_data_prefix, data_impl,
+            if multiple_valid_sets:
+
+                prefixes, names = get_valid_datasets(valid_data_prefix)
+                valid_dataset = dict()
+                for idx in range(len(prefixes)):
+                    prefix = prefixes[idx]
+                    name = names[idx]
+                    valid_dataset[name] = build_dataset("valid", [1,prefix], data_impl,
+                                          splits_string,
+                                          train_valid_test_num_samples[1],
+                                          seq_length, seed, False,
+                                          data_cache_path=data_cache_path)
+            else:
+                valid_dataset = build_dataset("valid", valid_data_prefix, data_impl,
                                           splits_string,
                                           train_valid_test_num_samples[1],
                                           seq_length, seed, False,
