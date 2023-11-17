@@ -79,6 +79,17 @@ def get_datasets_weights_and_num_samples(data_prefix,
     return prefixes, weights, datasets_train_valid_test_num_samples
 
 
+def get_valid_datasets(data_prefix):
+    assert len(data_prefix) % 2 == 0
+    num_datasets = len(data_prefix) // 2
+    names = [0]*num_datasets
+    prefixes = [0]*num_datasets
+    for i in range(num_datasets):
+        names[i] = (data_prefix[2*i]).strip()
+        prefixes[i] = (data_prefix[2*i+1]).strip()
+
+    return prefixes, names
+
 def compile_helper():
     """Compile helper function ar runtime. Make sure this
     is invoked on a single process."""
