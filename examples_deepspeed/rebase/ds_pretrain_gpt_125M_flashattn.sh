@@ -101,7 +101,7 @@ init_std=0.02
 train_tokens_in_billion=300
 train_tokens=$((${train_tokens_in_billion} * 1000000000))
 
-## train_samples is another termination condition and also affect the number of 
+## train_samples is another termination condition and also affect the number of
 ## data samples to be indexed. Since we want to reach the train_tokens
 ## above, and data efficiency techniques may change num tokens in some samples,
 ## so we just set this config large enough to make sure we have enough
@@ -124,7 +124,7 @@ lr_warmup_tokens=$((${lr_warmup_tokens_in_million} * 1000000))
 ## Here we changed the LR decay tokens to align with total train tokens, since
 ## related works (e.g., https://arxiv.org/abs/2203.15556) find that setting the
 ## learning rate schedule to match the number of training tokens results in the
-## best final model quality 
+## best final model quality
 lr_decay_tokens_in_billion=${train_tokens_in_billion}
 lr_decay_tokens=$((${lr_decay_tokens_in_billion} * 1000000000))
 lr_decay_style="cosine"
@@ -143,9 +143,9 @@ no_pp="false"
 zero_stage=1
 
 ## Total number of GPUs. ds_ssh is from DeepSpeed library.
-num_gpus=$(($(ds_ssh nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)-2))
-num_gpus_pernode=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
-num_node=$(( ${num_gpus} / ${num_gpus_pernode} ))
+num_gpus=8 #$(($(ds_ssh nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)-2))
+num_gpus_pernode=8 #$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
+num_node=1 #$(( ${num_gpus} / ${num_gpus_pernode} ))
 
 ## Data parallel size.
 dp_size=$(( ${num_gpus} / ${pp_size} / ${mp_size} ))
@@ -157,16 +157,16 @@ dp_size=$(( ${num_gpus} / ${pp_size} / ${mp_size} ))
 batch_size=2
 ###############################################################################
 ### Misc configs
-log_interval=10
-eval_iters=10
-eval_interval=100
+log_interval=100
+eval_iters=100
+eval_interval=1000
 # num_save controls how frequent to save checkpoint. num_save=20 means that a
 # checkpoint will be saved every 5% of training. For longer training you would
 # want larger num_save to save more frequently, and vice versa.
-num_save=100
+num_save=500
 estimated_train_iter=$((${train_tokens} / ${seq_len} / ${global_batch_size}))
 # save_interval=$((${estimated_train_iter} / ${num_save}))
-save_interval=100
+save_interval=1000
 
 ## Activation checkpointing saves GPU memory, but reduces training speed
 activation_checkpoint="true"
@@ -182,22 +182,9 @@ host="${HOSTNAME}"
 seed=1234
 num_workers=0
 
-data_path="BookCorpusDataset_text_document"
-if [ ! -f "BookCorpusDataset_text_document.bin" ]; then
-    wget https://the-eye.eu/public/AI/pile_neox/data/BookCorpusDataset_text_document.bin
-fi
-if [ ! -f "BookCorpusDataset_text_document.idx" ]; then
-    wget https://the-eye.eu/public/AI/pile_neox/data/BookCorpusDataset_text_document.idx
-fi
-
-vocab_path="gpt2-vocab.json"
-if [ ! -f "$vocab_path" ]; then
-    wget https://s3.amazonaws.com/models.huggingface.co/bert/gpt2-vocab.json
-fi
-merge_path="gpt2-merges.txt"
-if [ ! -f "$merge_path" ]; then
-    wget https://s3.amazonaws.com/models.huggingface.co/bert/gpt2-merges.txt
-fi
+VOCAB_PATH=/dataset/gpt2-vocab.json
+MERGE_PATH=/dataset/gpt2-merges.txt
+DATA_BLEND=/dataset/my-gpt2_text_document #my-gpt2_text_document is regenerated from Oscar dataset.
 
 prescale_grad="true"
 jobname="gpt_${model_size}B_tok${train_tokens_in_billion}B"
@@ -226,14 +213,15 @@ mkdir -p ${checkpoint_path}
 mkdir -p ${tensorboard_path}
 ###############################################################################
 data_options=" \
-    --vocab-file ${vocab_path} \
-    --merge-file ${merge_path} \
-    --data-path ${data_path} \
-    --data-impl mmap"
+         --vocab-file ${dir}/../..${VOCAB_PATH} \
+         --merge-file ${dir}/../..${MERGE_PATH} \
+         --data-path ${dir}/../..${DATA_BLEND} \
+         --data-impl mmap"
 
 ## If CL is used, make sure to set "--split" the same as what you used during
 ## offline data analysis&indexing.
 megatron_options=" \
+    --no-gradient-accumulation-fusion \
     --override-opt_param-scheduler \
     --adam-beta1 0.9 \
     --adam-beta2 0.95 \
@@ -329,4 +317,4 @@ if [[ $iteration -gt 0 ]]; then
     ds_ssh "echo $iteration_2 > $iteration_file_2"
 fi
 
-deepspeed ${dir}/../../pretrain_gpt.py ${megatron_options} ${data_options} ${deepspeed_options} &>> ${log_path}/${jobname}_${host}_${current_time}.log
+deepspeed --num_gpus=${num_gpus} ${dir}/../../pretrain_gpt.py ${megatron_options} ${data_options} ${deepspeed_options} |& tee ${log_path}/${jobname}_${host}_${current_time}.log
