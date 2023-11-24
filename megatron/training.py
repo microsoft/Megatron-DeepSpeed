@@ -1282,7 +1282,8 @@ def evaluate(forward_step_func,
              model,
              process_non_loss_data_func,
              config,
-             verbose=False):
+             verbose=False,
+             dataset_name=None):
     """Evaluation."""
     args = get_args()
 
@@ -1345,9 +1346,14 @@ def evaluate(forward_step_func,
                             total_loss_dict[key] = total_loss_dict.get(
                                 key, get_accelerator().FloatTensor([0.0])) + loss_dict[key]
 
-            args.consumed_valid_samples += mpu.get_data_parallel_world_size() \
-                                           * args.micro_batch_size \
-                                           * get_num_microbatches()
+            if args.multiple_valid_sets:
+                args.consumed_valid_samples[dataset_name] += mpu.get_data_parallel_world_size() \
+                                            * args.micro_batch_size \
+                                            * get_num_microbatches()
+            else:
+                args.consumed_valid_samples += mpu.get_data_parallel_world_size() \
+                                            * args.micro_batch_size \
+                                            * get_num_microbatches()
         collected_non_loss_data = None
         if process_non_loss_data_func is not None and is_last_rank():
             collected_non_loss_data = forward_backward_func(
@@ -1394,7 +1400,7 @@ def evaluate_and_print_results(prefix, forward_step_func,
         for name in data_iterator.keys():
             total_loss_dict[name], collected_non_loss_data[name] = evaluate(
                 forward_step_func, data_iterator[name], model,
-                process_non_loss_data_func, config, verbose)
+                process_non_loss_data_func, config, verbose, dataset_name=name)
     else:
         total_loss_dict, collected_non_loss_data = evaluate(
             forward_step_func, data_iterator, model,
@@ -1529,7 +1535,7 @@ def build_train_valid_test_data_loaders(
             valid_dataloader=dict()
             for name in valid_ds.keys():
                 valid_dataloader[name] = build_pretraining_data_loader(
-                    valid_ds[name], args.consumed_valid_samples)
+                    valid_ds[name], args.consumed_valid_samples[name])
         else:
             valid_dataloader = build_pretraining_data_loader(
                 valid_ds, args.consumed_valid_samples)

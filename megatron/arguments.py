@@ -200,7 +200,13 @@ def validate_args(args):
 
     # Consumed tokens.
     args.consumed_train_samples = 0
-    args.consumed_valid_samples = 0
+    if args.multiple_valid_sets:
+        args.consumed_valid_samples=dict()
+        for i, name in enumerate(args.valid_data_path):
+            if i%2==0:
+                args.consumed_valid_samples[name]=0
+    else:
+        args.consumed_valid_samples = 0
     args.consumed_train_tokens = 0
 
     # Support for variable sequence lengths across batches/microbatches.

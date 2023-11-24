@@ -8,6 +8,8 @@ import sys
 import numpy as np
 from deepspeed.accelerator import get_accelerator
 import torch
+from collections.abc import Mapping
+
 
 from megatron import update_num_microbatches, get_tokenizer
 from megatron.core import mpu, tensor_parallel
@@ -607,14 +609,32 @@ def load_checkpoint(model, optimizer, opt_param_scheduler, load_arg='load', stri
     reset_train_valid_samples = args.reset_iteration
     if not load_only_weights and not reset_train_valid_samples:
         assert args.consumed_train_samples == 0
-        assert args.consumed_valid_samples == 0
+
+        if args.multiple_valid_sets:
+            for key in args.consumed_valid_samples.keys():
+                assert args.consumed_valid_samples[key] == 0
+        else:
+            assert args.consumed_valid_samples == 0
+
         if 'args' in state_dict and not args.finetune:
             checkpoint_args = state_dict['args']
             check_checkpoint_args(checkpoint_args)
             args.consumed_train_samples = getattr(checkpoint_args,
                                                 'consumed_train_samples', 0)
             update_num_microbatches(consumed_samples=args.consumed_train_samples)
-            args.consumed_valid_samples = getattr(checkpoint_args,
+
+            if args.multiple_valid_sets:
+                args.consumed_valid_samples = getattr(checkpoint_args,
+                                                'consumed_valid_samples', 0)
+
+                if not isinstance(args.consumed_valid_samples, Mapping):
+                    args.consumed_valid_samples = dict()
+                    for i, name in enumerate(args.valid_data_path):
+                        if i%2==0:
+                            args.consumed_valid_samples[name]=0 
+                
+            else:
+                args.consumed_valid_samples = getattr(checkpoint_args,
                                                 'consumed_valid_samples', 0)
         else:
             print_rank_0('could not find arguments in the checkpoint ...')
