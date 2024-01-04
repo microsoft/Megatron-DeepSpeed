@@ -104,7 +104,7 @@ class refactor:
 
         new_w = torch.zeros((per_partition_vocab_size, hf_w.shape[1]), dtype=hf_w.dtype)
         new_w[:real_partition_vocab_size, :] = hf_w[start_index:end_index, :]
-        if self.tp_rank == self.tp_size - 1:
+        if self.tp_rank == self.tp_size - 1 and self.more_padded > 0:
             new_w[-self.more_padded:] = hf_w[:self.token_vocab].mean(dim=0, keepdim=True)
 
         self.record_mapping_info(
