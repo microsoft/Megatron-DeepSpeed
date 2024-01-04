@@ -1,5 +1,8 @@
 import torch
 import re
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from torch.nn.parallel.distributed import DistributedDataParallel as torchDDP
 from megatron import print_rank_0, get_tokenizer, get_args
 from megatron.core import mpu
