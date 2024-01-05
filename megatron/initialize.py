@@ -29,7 +29,7 @@ is_rocm_pytorch = OpBuilder.is_rocm_pytorch()
 
 
 def initialize_megatron(extra_args_provider=None, args_defaults={},
-                        ignore_unknown_args=False, allow_no_cuda=False):
+                        ignore_unknown_args=False, allow_no_cuda=False, external_args={}):
     """Set global variables, initialize distributed, and
     set autoresume and random seeds.
     `allow_no_cuda` should not be set unless using megatron for cpu only 
@@ -45,12 +45,16 @@ def initialize_megatron(extra_args_provider=None, args_defaults={},
     # Parse arguments
     args = parse_args(extra_args_provider, ignore_unknown_args)
 
+    for key in external_args:
+        if key in args:
+            setattr(args, key, external_args[key])
+
     if args.use_checkpoint_args or args_defaults.get('use_checkpoint_args', False):
         assert args.load is not None, '--use-checkpoints-args requires --load argument'
         load_args_from_checkpoint(args)
 
     validate_args(args, args_defaults)
-        
+
     # set global args, build tokenizer, and set adlr-autoresume,
     # tensorboard-writer, and timers.
     set_global_variables(args)
