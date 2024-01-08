@@ -264,7 +264,6 @@ def forward_step(data_iterator, model):
         if hasattr(args, 'data_efficiency_curriculum_learning_seqlen_type') and \
             args.data_efficiency_curriculum_learning_seqlen_type == 'seqlen_reshape':
             args.data_efficiency_curriculum_learning_numel = torch.numel(tokens)
-
     if args.mos or args.kd:
         # The forward func can return either the loss or the logits, depending on whether passing in the labels or not.
         stu_output, other_losses = model(tokens, position_ids, attention_mask)

@@ -337,7 +337,7 @@ def forward_backward_no_pipelining(*,
         no_sync_func = contextlib.nullcontext
 
     args = get_args()
-    if args.deepspeed:
+    if args.deepspeed and not args.inference:
         model.set_gradient_accumulation_boundary(False)
 
     model_type = get_model_type(model)
@@ -350,9 +350,8 @@ def forward_backward_no_pipelining(*,
                                          input_tensor, forward_data_store, config, collect_non_loss_data)
             if not forward_only:
                 backward_step(input_tensor, output_tensor, output_tensor_grad, model_type, config, model)
-    if args.deepspeed:
+    if args.deepspeed and not args.inference:
         model.set_gradient_accumulation_boundary(True)
-
     # Run computation for last microbatch out of context handler (want to
     # synchronize gradients).
     output_tensor = forward_step(forward_step_func, data_iterator, model, num_microbatches,

@@ -12,6 +12,8 @@ _TRAIN_START_TIME = time.time()
 import torch
 from torch.nn.parallel.distributed import DistributedDataParallel as torchDDP
 
+from contextlib import ExitStack
+
 from megatron import get_args
 from megatron import get_signal_handler
 from megatron import get_timers
@@ -156,7 +158,6 @@ def pretrain(train_valid_test_dataset_provider,
                 args.deepspeed_config_dict["curriculum_learning"])
         if "compression_training" in args.deepspeed_config_dict:
             args.compression_training = True
-
     # Model, optimizer, and learning rate.
     timers('model-and-optimizer-setup', log_level=0).start(barrier=True)
     model, optimizer, opt_param_scheduler = setup_model_and_optimizer(
@@ -166,6 +167,7 @@ def pretrain(train_valid_test_dataset_provider,
     print_datetime('after model, optimizer, and learning rate '
                    'scheduler are built')
 
+    
     # Data stuff.
     timers('train/valid/test-data-iterators-setup', log_level=0).start(
         barrier=True)
@@ -199,7 +201,6 @@ def pretrain(train_valid_test_dataset_provider,
             train_data_iterator = None
     timers('train/valid/test-data-iterators-setup').stop()
     print_datetime('after dataloaders are built')
-
     # args.teacher_model is used as global variable to pass the teacher model
     # for knowledge distillation. Users do not need to set it in the command
     # line to use kd, but users do need to provide teacher model configurations
@@ -1158,7 +1159,25 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
     if args.random_ltd:
         assert model[0].random_ltd_enabled()
         args.random_ltd_layer_num = model[0].random_ltd_scheduler.get_random_ltd_layer_num()
-        
+    
+    now = datetime.now()
+    timestamp = now.strftime("%Y%m%d_%H%M")
+    with ExitStack() as stack:
+        prof = stack.enter_context(
+            torch.profiler.profile(
+                schedule=torch.profiler.schedule(wait=1, warmup=1, active=2, repeat=1),
+                on_trace_ready=torch.profiler.tensorboard_trace_handler(
+                    "./output/tensorboard/training"
+                    + '_'+args.profile_name
+                    +'_'+timestamp
+                ),
+                record_shapes=True,
+                profile_memory=True,
+                with_stack=True,
+                with_flops=True,
+            )
+        )
+    
     while iteration < args.train_iters and (args.train_tokens is None or \
         args.consumed_train_tokens < args.train_tokens):
         update_num_microbatches(args.consumed_train_samples)
@@ -1281,7 +1300,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
             torch.distributed.barrier()
             print_datetime('exiting program at iteration {}'.format(iteration))
             sys.exit()
-
+        prof.step()
 
     return iteration
 
@@ -1316,6 +1335,24 @@ def evaluate(forward_step_func,
 
     total_loss_dict = {}
 
+    now = datetime.now()
+    timestamp = now.strftime("%Y%m%d_%H%M")
+    with ExitStack() as stack:
+        prof = stack.enter_context(
+            torch.profiler.profile(
+                schedule=torch.profiler.schedule(wait=2, warmup=1, active=2, repeat=1),
+                on_trace_ready=torch.profiler.tensorboard_trace_handler(
+                    "./output/tensorboard/inference"
+                    + '_'+args.profile_name
+                    +'_'+timestamp
+                ),
+                record_shapes=True,
+                profile_memory=True,
+                with_stack=True,
+                with_flops=True,
+            )
+        )
+    report_memory("before evaluate")
     with torch.no_grad():
         iteration = 0
         while iteration < args.eval_iters:
@@ -1323,6 +1360,7 @@ def evaluate(forward_step_func,
             if verbose and iteration % args.log_interval == 0:
                 print_rank_0('Evaluating iter {}/{}'.format(iteration,
                                                             args.eval_iters))
+                report_memory("(memory on iteration {})".format(iteration))
 
             forward_backward_func = get_forward_backward_func()
             # Don't care about timing during evaluation
@@ -1359,6 +1397,8 @@ def evaluate(forward_step_func,
             args.consumed_valid_samples += mpu.get_data_parallel_world_size() \
                                            * args.micro_batch_size \
                                            * get_num_microbatches()
+            prof.step()
+        
         collected_non_loss_data = None
         if process_non_loss_data_func is not None and is_last_rank():
             collected_non_loss_data = forward_backward_func(
@@ -1400,7 +1440,6 @@ def evaluate_and_print_results(prefix, forward_step_func,
         writer = get_tensorboard_writer()
     else:
         writer = None
-
     total_loss_dict, collected_non_loss_data = evaluate(
         forward_step_func, data_iterator, model,
         process_non_loss_data_func, config, verbose)
