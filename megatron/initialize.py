@@ -41,6 +41,13 @@ def initialize_megatron(extra_args_provider=None, args_defaults={},
 
     # Parse arguments
     args = parse_args(extra_args_provider, ignore_unknown_args)
+    # TODO: why can't these args be passed in?
+    args.wandb_logger = "True"
+    args.wandb_project = "test-logger"
+    args.wandb_entity = "nightingal3"
+    args.wandb_id = "testing-456"
+    args.wandb_resume = "None"
+    args.wandb_api_key = "b7a010df0c667b1672b227bd30fc7f16d3c1e0db"
 
     if args.use_checkpoint_args or args_defaults.get('use_checkpoint_args', False):
         assert args.load is not None, '--use-checkpoints-args requires --load argument'
@@ -51,7 +58,8 @@ def initialize_megatron(extra_args_provider=None, args_defaults={},
     # set global args, build tokenizer, and set adlr-autoresume,
     # tensorboard-writer, and timers.
     set_global_variables(args)
-
+    writer = get_tensorboard_writer()
+  
     # torch.distributed initialization
     def finish_mpu_init():
         args = get_args()
@@ -273,11 +281,12 @@ def _set_random_seed(seed_, data_parallel_random_init=False):
 def write_args_to_tensorboard():
     """Write arguments to tensorboard."""
     args = get_args()
-    writer = get_tensorboard_writer()
-    if writer:
-        for arg in vars(args):
-            writer.add_text(arg, str(getattr(args, arg)),
-                            global_step=args.iteration)
+    if not getattr(args,"wandb_logger",False):
+        writer = get_tensorboard_writer()
+        if writer:
+            for arg in vars(args):
+                writer.add_text(arg, str(getattr(args, arg)),
+                                global_step=args.iteration)
 
 
 def _initialize_mem_buffs():

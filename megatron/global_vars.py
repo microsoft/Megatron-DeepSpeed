@@ -84,7 +84,6 @@ def set_global_variables(args):
     """Set args, tokenizer, tensorboard-writer, adlr-autoresume, and timers."""
 
     assert args is not None
-
     _ensure_var_is_not_initialized(_GLOBAL_ARGS, 'args')
     set_args(args)
 
@@ -137,19 +136,36 @@ def _set_tensorboard_writer(args):
     global _GLOBAL_TENSORBOARD_WRITER
     _ensure_var_is_not_initialized(_GLOBAL_TENSORBOARD_WRITER,
                                    'tensorboard writer')
-
-    if hasattr(args, 'tensorboard_dir') and \
-       args.tensorboard_dir and args.rank == (args.world_size - 1):
-        try:
-            from torch.utils.tensorboard import SummaryWriter
-            print('> setting tensorboard ...')
-            _GLOBAL_TENSORBOARD_WRITER = SummaryWriter(
-                log_dir=args.tensorboard_dir,
-                max_queue=args.tensorboard_queue_size)
-        except ModuleNotFoundError:
-            print('WARNING: TensorBoard writing requested but is not '
-                  'available (are you using PyTorch 1.1.0 or later?), '
-                  'no TensorBoard logs will be written.', flush=True)
+    if getattr(args,"wandb_logger",False):
+        """
+        if this arg is set to True, we check the other wandb relevant arguments and
+        return a shim which exposes the wandb logging via a tensorboard-y API
+        """
+        if args.rank == (args.world_size - 1):
+            # this is already implemented in megatron-llm: just also adding it here.
+            try:
+                from  megatron.wandb_logger import WandBConfig,WandbTBShim
+                cfg=WandBConfig.from_args(args) 
+                shim=WandbTBShim(cfg)
+                print('> setting wandb ...')
+                _GLOBAL_TENSORBOARD_WRITER=shim
+            except ModuleNotFoundError:
+                print('WARNING: WanDB writing requested but is not '
+                      'available, '
+                      'no WandB logs will be written.', flush=True)
+        else:
+            if hasattr(args, 'tensorboard_dir') and \
+            args.tensorboard_dir and args.rank == (args.world_size - 1):
+                try:
+                    from torch.utils.tensorboard import SummaryWriter
+                    print('> setting tensorboard ...')
+                    _GLOBAL_TENSORBOARD_WRITER = SummaryWriter(
+                        log_dir=args.tensorboard_dir,
+                        max_queue=args.tensorboard_queue_size)
+                except ModuleNotFoundError:
+                    print('WARNING: TensorBoard writing requested but is not '
+                        'available (are you using PyTorch 1.1.0 or later?), '
+                        'no TensorBoard logs will be written.', flush=True)
 
 
 def _set_adlr_autoresume(args):
