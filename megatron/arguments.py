@@ -424,6 +424,10 @@ def validate_args(args, defaults={}):
         assert not args.mos, 'GQA currently does not support args.mos'
         assert not args.kd, 'GQA currently does not support args.kd'
 
+    if args.wandb_logger:
+        assert args.wandb_api_key is not None, "Must provide wandb_api_key when using wandb_logger"
+        assert args.wandb_entity is not None, "Must provide wandb_entity when using wandb_logger"
+    
     # Print arguments.
     _print_args("arguments", args)
     retro_args = get_retro_args()
@@ -716,6 +720,15 @@ def _add_logging_args(parser):
     group.add_argument('--log-world-size-to-tensorboard',
                        action='store_true',
                        help='Enable world size logging to tensorboard.')
+
+    # wandb logger arguments
+    group.add_argument("--wandb_logger", action="store_true", help="use the wandb logger")
+    group.add_argument("--wandb_project", type=str, default="megatron-ds-training")
+    group.add_argument("--wandb_entity", type=str, default=None)
+    group.add_argument("--wandb_api_key", type=str, default=None)
+    group.add_argument("--wandb_run_name", type=str, default=None)
+    group.add_argument("--wandb_resume", type=str, default=None)
+    group.add_argument("--wandb_id", type=str, default=None)
 
     return parser
 

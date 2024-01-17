@@ -111,7 +111,12 @@ class WandbTBShim(object):
                    id=config.run_id,
                    dir=config.local_dir
                 )
-        self._last_step = None
+        
+        wandb.define_metric("sample/*", step_metric="sample")
+        wandb.define_metric("step/*", step_metric="step")
+        wandb.define_metric("token/*", step_metric="token")
+
+        self._last_step = defaultdict(lambda: 1)
         self._log_accum = {}
         if self.cfg.with_tensorboard:
             try:
@@ -128,40 +133,22 @@ class WandbTBShim(object):
             self.tb_writer=None
 
     @try_catch_guard
-    def _add_scalar(self, name: str, var: Union[float, int, torch.Tensor], step: int):
-        if isinstance(var, torch.Tensor):
-            var = var.item()
-        if self.tb_writer is not None:
-            self.tb_writer.add_scalar(name, var, global_step=step)
-        if " vs " in name:
-            # wandb does not allow logging to previous steps and the ' vs '
-            # scalars are usually a lot of steps forward compared to the rest
-            # of the scalars (as they count per sample, not per batch) so we
-            # just ignore them and rely on tensorboard to log them
-            warn(f"Ignoring wandb log for {name}")
-            return
-
-        if self._last_step is not None and step > self._last_step:
-            self.flush_all()
-
-        self._last_step = step
-        self._log_accum[name] = var
-
-    @try_catch_guard
     def add_scalar(self, name: str, var: Union[float, int, torch.Tensor], step: int):
         if isinstance(var, torch.Tensor):
             var = var.item()
         if self.tb_writer is not None:
             self.tb_writer.add_scalar(name, var, global_step=step)
-        
-        wandb.log({name:var},step=step)
 
-    @try_catch_guard
-    def flush_all(self):
-        if len(self._log_accum) > 0:
-            wandb.log(self._log_accum, step=self._last_step, commit=True)
-        self._log_accum = {}
-        self._last_step = None
+        # I'm keying metrics by sample/step/token etc so it doesn't mess up wandb logging.
+        # e.g. the format of names should be <time_freq>/<metric_name> where time_freq is one of the above 
+        step_key = name.split("/")[0]
+
+        if step_key not in ["sample","step","token"]:
+            return
+
+        if self._last_step[step_key] is not None and step >= self._last_step[step_key]:
+            self._last_step[step_key] = step
+            wandb.log({name: var, step_key: step})
 
     @try_catch_guard
     def add_text(self,name:str,value:str):
