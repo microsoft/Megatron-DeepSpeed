@@ -65,7 +65,8 @@ def initialize_megatron(extra_args_provider=None, args_defaults={},
     # set global args, build tokenizer, and set adlr-autoresume,
     # tensorboard-writer, and timers.
     set_global_variables(args)
-
+    writer = get_tensorboard_writer()
+  
     # torch.distributed initialization
     def finish_mpu_init():
         args = get_args()
@@ -295,11 +296,12 @@ def _set_random_seed(seed_, data_parallel_random_init=False):
 def write_args_to_tensorboard():
     """Write arguments to tensorboard."""
     args = get_args()
-    writer = get_tensorboard_writer()
-    if writer:
-        for arg in vars(args):
-            writer.add_text(arg, str(getattr(args, arg)),
-                            global_step=args.iteration)
+    if not getattr(args,"wandb_logger",False):
+        writer = get_tensorboard_writer()
+        if writer:
+            for arg in vars(args):
+                writer.add_text(arg, str(getattr(args, arg)),
+                                global_step=args.iteration)
 
 
 def _initialize_mem_buffs():

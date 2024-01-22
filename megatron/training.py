@@ -858,93 +858,93 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
         timers.write(timers_to_log, writer, iteration,
                      normalizer=total_iterations)
     if writer and (iteration % args.tensorboard_log_interval == 0):
-        writer.add_scalar('steps-vs-samples/y=steps,x=samples', iteration, args.consumed_train_samples)
-        writer.add_scalar('steps-vs-samples/y=samples,x=steps', args.consumed_train_samples, iteration)
-        writer.add_scalar('steps-vs-tokens/y=steps,x=tokens', iteration, args.consumed_train_tokens)
-        writer.add_scalar('steps-vs-tokens/y=tokens,x=steps', args.consumed_train_tokens, iteration)
+        writer.add_scalar('sample/steps-vs-samples/y=steps,x=samples', iteration, args.consumed_train_samples)
+        writer.add_scalar('step/steps-vs-samples/y=samples,x=steps', args.consumed_train_samples, iteration)
+        writer.add_scalar('token/steps-vs-tokens/y=steps,x=tokens', iteration, args.consumed_train_tokens)
+        writer.add_scalar('step/steps-vs-tokens/y=tokens,x=steps', args.consumed_train_tokens, iteration)
         if args.log_learning_rate_to_tensorboard:
-            writer.add_scalar('learning-rate/learning-rate', learning_rate, iteration)
-            writer.add_scalar('learning-rate/learning-rate vs samples', learning_rate,
+            writer.add_scalar('step/learning-rate/learning-rate', learning_rate, iteration)
+            writer.add_scalar('sample/learning-rate/learning-rate vs samples', learning_rate,
                               args.consumed_train_samples)
-            writer.add_scalar('learning-rate/learning-rate vs tokens', learning_rate,
+            writer.add_scalar('token/learning-rate/learning-rate vs tokens', learning_rate,
                               args.consumed_train_tokens)
         if args.log_batch_size_to_tensorboard:
-            writer.add_scalar('batch-size/batch-size', batch_size, iteration)
-            writer.add_scalar('batch-size/batch-size vs samples', batch_size,
+            writer.add_scalar('step/batch-size/batch-size', batch_size, iteration)
+            writer.add_scalar('sample/batch-size/batch-size vs samples', batch_size,
                               args.consumed_train_samples)
-            writer.add_scalar('batch-size/batch-size vs tokens', batch_size,
+            writer.add_scalar('token/batch-size/batch-size vs tokens', batch_size,
                               args.consumed_train_tokens)
         for key in loss_dict:
-            writer.add_scalar(f"lm-loss-training/{key}", loss_dict[key], iteration)
-            writer.add_scalar(f"lm-loss-training/{key}" + ' vs samples', loss_dict[key],
+            writer.add_scalar(f"step/lm-loss-training/{key}", loss_dict[key], iteration)
+            writer.add_scalar(f"sample/lm-loss-training/{key}" + ' vs samples', loss_dict[key],
                               args.consumed_train_samples)
-            writer.add_scalar(f"lm-loss-training/{key}" + ' vs tokens', loss_dict[key],
+            writer.add_scalar(f"token/lm-loss-training/{key}" + ' vs tokens', loss_dict[key],
                               args.consumed_train_tokens)
-        if args.fp16 and args.log_loss_scale_to_tensorboard:
-            writer.add_scalar('loss-scale/loss-scale', loss_scale, iteration)
-            writer.add_scalar('loss-scale/loss-scale vs samples', loss_scale,
+        if args.log_loss_scale_to_tensorboard:
+            writer.add_scalar('step/loss-scale/loss-scale', loss_scale, iteration)
+            writer.add_scalar('sample/loss-scale/loss-scale vs samples', loss_scale,
                               args.consumed_train_samples)
-            writer.add_scalar('loss-scale/loss-scale vs tokens', loss_scale,
+            writer.add_scalar('token/loss-scale/loss-scale vs tokens', loss_scale,
                               args.consumed_train_tokens)
         if args.log_world_size_to_tensorboard:
-            writer.add_scalar('world-size/world-size', args.world_size, iteration)
-            writer.add_scalar('world-size/world-size vs samples', args.world_size,
+            writer.add_scalar('step/world-size/world-size', args.world_size, iteration)
+            writer.add_scalar('sample/world-size/world-size vs samples', args.world_size,
                               args.consumed_train_samples)
-            writer.add_scalar('world-size/world-size vs tokens', args.world_size,
+            writer.add_scalar('token/world-size/world-size vs tokens', args.world_size,
                               args.consumed_train_tokens)
         if grad_norm is not None:
-            writer.add_scalar('grad-norm/grad-norm', grad_norm, iteration)
-            writer.add_scalar('grad-norm/grad-norm vs samples', grad_norm,
+            writer.add_scalar('step/grad-norm/grad-norm', grad_norm, iteration)
+            writer.add_scalar('sample/grad-norm/grad-norm vs samples', grad_norm,
                               args.consumed_train_samples)
-            writer.add_scalar('grad-norm/grad-norm vs tokens', grad_norm,
+            writer.add_scalar('token/grad-norm/grad-norm vs tokens', grad_norm,
                               args.consumed_train_tokens)
         if num_zeros_in_grad is not None:
-            writer.add_scalar('num-zeros/num-zeros', num_zeros_in_grad, iteration)
-            writer.add_scalar('num-zeros/num-zeros vs samples', num_zeros_in_grad,
+            writer.add_scalar('step/num-zeros/num-zeros', num_zeros_in_grad, iteration)
+            writer.add_scalar('sample/num-zeros/num-zeros vs samples', num_zeros_in_grad,
                               args.consumed_train_samples)
-            writer.add_scalar('num-zeros/num-zeros vs tokens', num_zeros_in_grad,
+            writer.add_scalar('token/num-zeros/num-zeros vs tokens', num_zeros_in_grad,
                               args.consumed_train_tokens)
         if params_norm is not None:
-            writer.add_scalar('params-norm/params-norm', params_norm, iteration)
-            writer.add_scalar('params-norm/params-norm vs samples', params_norm,
+            writer.add_scalar('step/params-norm/params-norm', params_norm, iteration)
+            writer.add_scalar('sample/params-norm/params-norm vs samples', params_norm,
                               args.consumed_train_samples)
-            writer.add_scalar('params-norm/params-norm vs tokens', params_norm,
+            writer.add_scalar('token/params-norm/params-norm vs tokens', params_norm,
                               args.consumed_train_tokens)
         if hasattr(args, 'actual_seq_length'):
-            writer.add_scalar('seqlen/actual_seq_length', args.actual_seq_length,
+            writer.add_scalar('step/seqlen/actual_seq_length', args.actual_seq_length,
                               iteration)
-            writer.add_scalar('seqlen/actual_seq_length vs samples', args.actual_seq_length,
+            writer.add_scalar('sample/seqlen/actual_seq_length vs samples', args.actual_seq_length,
                               args.consumed_train_samples)
-            writer.add_scalar('seqlen/actual_seq_length vs tokens', args.actual_seq_length,
+            writer.add_scalar('token/seqlen/actual_seq_length vs tokens', args.actual_seq_length,
                               args.consumed_train_tokens)
         if args.curriculum_learning_legacy or args.data_efficiency_curriculum_learning:
-            writer.add_scalar('seqlen/curriculum_seqlen', args.curriculum_seqlen,
+            writer.add_scalar('step/seqlen/curriculum_seqlen', args.curriculum_seqlen,
                               iteration)
-            writer.add_scalar('seqlen/curriculum_seqlen vs samples', args.curriculum_seqlen,
+            writer.add_scalar('sample/seqlen/curriculum_seqlen vs samples', args.curriculum_seqlen,
                               args.consumed_train_samples)
-            writer.add_scalar('seqlen/curriculum_seqlen vs tokens', args.curriculum_seqlen,
+            writer.add_scalar('token/seqlen/curriculum_seqlen vs tokens', args.curriculum_seqlen,
                               args.consumed_train_tokens)
         if args.random_ltd:
-            writer.add_scalar('seqlen/random_ltd_reserved_length', args.random_ltd_reserved_length,
+            writer.add_scalar('step/seqlen/random_ltd_reserved_length', args.random_ltd_reserved_length,
                               iteration)
-            writer.add_scalar('seqlen/random_ltd_reserved_length vs samples', args.random_ltd_reserved_length,
+            writer.add_scalar('sample/seqlen/random_ltd_reserved_length vs samples', args.random_ltd_reserved_length,
                               args.consumed_train_samples)
-            writer.add_scalar('seqlen/random_ltd_reserved_length vs tokens', args.random_ltd_reserved_length,
+            writer.add_scalar('token/seqlen/random_ltd_reserved_length vs tokens', args.random_ltd_reserved_length,
                               args.consumed_train_tokens)
         if args.log_memory_to_tensorboard:
             mem_stats = torch.cuda.memory_stats()
             writer.add_scalar(
-                "mem-reserved-bytes",
+                "step/mem-reserved-bytes",
                 mem_stats["reserved_bytes.all.current"],
                 iteration,
             )
             writer.add_scalar(
-                "mem-allocated-bytes",
+                "sample/mem-allocated-bytes",
                 mem_stats["allocated_bytes.all.current"],
                 iteration,
             )
             writer.add_scalar(
-                "mem-allocated-count",
+                "token/mem-allocated-count",
                 mem_stats["allocation.all.current"],
                 iteration,
             )
@@ -994,31 +994,31 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
 
             # print('step {} rank {} after sync opt_stats {}, {}'.format(iteration, torch.distributed.get_rank(), opt_stats_2, opt_stats))
             if writer and is_last_rank():
-                writer.add_scalar('optimizer/variance_l2 vs tokens', opt_stats[0]**0.5, args.consumed_train_tokens)
-                writer.add_scalar('optimizer/variance_sqrt_l2 vs tokens', opt_stats[1]**0.5, args.consumed_train_tokens)
-                writer.add_scalar('optimizer/momentum_l2 vs tokens', opt_stats[2]**0.5, args.consumed_train_tokens)
-                writer.add_scalar('optimizer/weight_l2 vs tokens', opt_stats[3]**0.5, args.consumed_train_tokens)
-                writer.add_scalar('optimizer/variance_l1 vs tokens', opt_stats[4], args.consumed_train_tokens)
-                writer.add_scalar('optimizer/variance_sqrt_l1 vs tokens', opt_stats[5], args.consumed_train_tokens)
-                writer.add_scalar('optimizer/momentum_l1 vs tokens', opt_stats[6], args.consumed_train_tokens)
-                writer.add_scalar('optimizer/weight_l1 vs tokens', opt_stats[7], args.consumed_train_tokens)
-                writer.add_scalar('optimizer/variance_abs_max vs tokens', opt_stats_2[0], args.consumed_train_tokens)
-                writer.add_scalar('optimizer/variance_sqrt_abs_max vs tokens', opt_stats_2[1], args.consumed_train_tokens)
-                writer.add_scalar('optimizer/momentum_abs_max vs tokens', opt_stats_2[2], args.consumed_train_tokens)
-                writer.add_scalar('optimizer/weight_abs_max vs tokens', opt_stats_2[3], args.consumed_train_tokens)
+                writer.add_scalar('token/optimizer/variance_l2 vs tokens', opt_stats[0]**0.5, args.consumed_train_tokens)
+                writer.add_scalar('token/optimizer/variance_sqrt_l2 vs tokens', opt_stats[1]**0.5, args.consumed_train_tokens)
+                writer.add_scalar('token/optimizer/momentum_l2 vs tokens', opt_stats[2]**0.5, args.consumed_train_tokens)
+                writer.add_scalar('token/optimizer/weight_l2 vs tokens', opt_stats[3]**0.5, args.consumed_train_tokens)
+                writer.add_scalar('token/optimizer/variance_l1 vs tokens', opt_stats[4], args.consumed_train_tokens)
+                writer.add_scalar('token/optimizer/variance_sqrt_l1 vs tokens', opt_stats[5], args.consumed_train_tokens)
+                writer.add_scalar('token/optimizer/momentum_l1 vs tokens', opt_stats[6], args.consumed_train_tokens)
+                writer.add_scalar('token/optimizer/weight_l1 vs tokens', opt_stats[7], args.consumed_train_tokens)
+                writer.add_scalar('token/optimizer/variance_abs_max vs tokens', opt_stats_2[0], args.consumed_train_tokens)
+                writer.add_scalar('token/optimizer/variance_sqrt_abs_max vs tokens', opt_stats_2[1], args.consumed_train_tokens)
+                writer.add_scalar('token/optimizer/momentum_abs_max vs tokens', opt_stats_2[2], args.consumed_train_tokens)
+                writer.add_scalar('token/optimizer/weight_abs_max vs tokens', opt_stats_2[3], args.consumed_train_tokens)
 
-                writer.add_scalar('optimizer/variance_l2', opt_stats[0]**0.5, iteration)
-                writer.add_scalar('optimizer/variance_sqrt_l2', opt_stats[1]**0.5, iteration)
-                writer.add_scalar('optimizer/momentum_l2', opt_stats[2]**0.5, iteration)
-                writer.add_scalar('optimizer/weight_l2', opt_stats[3]**0.5, iteration)
-                writer.add_scalar('optimizer/variance_l1', opt_stats[4], iteration)
-                writer.add_scalar('optimizer/variance_sqrt_l1', opt_stats[5], iteration)
-                writer.add_scalar('optimizer/momentum_l1', opt_stats[6], iteration)
-                writer.add_scalar('optimizer/weight_l1', opt_stats[7], iteration)
-                writer.add_scalar('optimizer/variance_abs_max', opt_stats_2[0], iteration)
-                writer.add_scalar('optimizer/variance_sqrt_abs_max', opt_stats_2[1], iteration)
-                writer.add_scalar('optimizer/momentum_abs_max', opt_stats_2[2], iteration)
-                writer.add_scalar('optimizer/weight_abs_max', opt_stats_2[3], iteration)
+                writer.add_scalar('step/optimizer/variance_l2', opt_stats[0]**0.5, iteration)
+                writer.add_scalar('step/optimizer/variance_sqrt_l2', opt_stats[1]**0.5, iteration)
+                writer.add_scalar('step/optimizer/momentum_l2', opt_stats[2]**0.5, iteration)
+                writer.add_scalar('step/optimizer/weight_l2', opt_stats[3]**0.5, iteration)
+                writer.add_scalar('step/optimizer/variance_l1', opt_stats[4], iteration)
+                writer.add_scalar('step/optimizer/variance_sqrt_l1', opt_stats[5], iteration)
+                writer.add_scalar('step/optimizer/momentum_l1', opt_stats[6], iteration)
+                writer.add_scalar('step/optimizer/weight_l1', opt_stats[7], iteration)
+                writer.add_scalar('step/optimizer/variance_abs_max', opt_stats_2[0], iteration)
+                writer.add_scalar('step/optimizer/variance_sqrt_abs_max', opt_stats_2[1], iteration)
+                writer.add_scalar('step/optimizer/momentum_abs_max', opt_stats_2[2], iteration)
+                writer.add_scalar('step/optimizer/weight_abs_max', opt_stats_2[3], iteration)
 
     if iteration % args.log_interval == 0:
         elapsed_time = timers('interval-time').elapsed(barrier=True)
@@ -1049,11 +1049,11 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
             wandb.run.log(tput)
         if writer:
             if args.log_timers_to_tensorboard:
-                writer.add_scalar('iteration-time/iteration-time',
+                writer.add_scalar('step/iteration-time/iteration-time',
                                   elapsed_time_per_iteration, iteration)
-                writer.add_scalar('iteration-time/iteration-time vs samples',
+                writer.add_scalar('sample/iteration-time/iteration-time vs samples',
                                   elapsed_time_per_iteration, args.consumed_train_samples)
-                writer.add_scalar('iteration-time/iteration-time vs tokens',
+                writer.add_scalar('token/iteration-time/iteration-time vs tokens',
                                   elapsed_time_per_iteration, args.consumed_train_tokens)
         log_string = ' iteration {:8d}/{:8d} |'.format(
             iteration, args.train_iters)
@@ -1417,21 +1417,21 @@ def evaluate_and_print_results(prefix, forward_step_func,
                 string += '{} PPL: {:.6E} | '.format(key, ppl)
                 if writer and is_last_rank():
                     data_type = 'test' if test else 'validation'
-                    writer.add_scalar(f'{name}/lm-loss-validation/{key} {data_type}',
+                    writer.add_scalar(f'step/{name}/lm-loss-validation/{key} {data_type}',
                                     total_loss_dict[name][key].item(),
                                     iteration)
-                    writer.add_scalar(f'{name}/lm-loss-validation/{key} {data_type} vs samples',
+                    writer.add_scalar(f'sample/{name}/lm-loss-validation/{key} {data_type} vs samples',
                                     total_loss_dict[name][key].item(),
                                     args.consumed_train_samples)
-                    writer.add_scalar(f'{name}/lm-loss-validation/{key} {data_type} vs tokens',
+                    writer.add_scalar(f'token/{name}/lm-loss-validation/{key} {data_type} vs tokens',
                                     total_loss_dict[name][key].item(),
                                     args.consumed_train_tokens)
                     if args.log_validation_ppl_to_tensorboard:
-                        writer.add_scalar(f'{name}/lm-loss-validation/{key} {data_type} ppl', ppl,
+                        writer.add_scalar(f'step/{name}/lm-loss-validation/{key} {data_type} ppl', ppl,
                                         iteration)
-                        writer.add_scalar(f'{name}/lm-loss-validation/{key} {data_type} ppl vs samples',
+                        writer.add_scalar(f'sample/{name}/lm-loss-validation/{key} {data_type} ppl vs samples',
                                         ppl, args.consumed_train_samples)
-                        writer.add_scalar(f'{name}/lm-loss-validation/{key} {data_type} ppl vs tokens',
+                        writer.add_scalar(f'token/{name}/lm-loss-validation/{key} {data_type} ppl vs tokens',
                                         ppl, args.consumed_train_tokens)
             string+='\n'
     
@@ -1443,21 +1443,21 @@ def evaluate_and_print_results(prefix, forward_step_func,
             string += '{} PPL: {:.6E} | '.format(key, ppl)
             if writer and is_last_rank():
                 data_type = 'test' if test else 'validation'
-                writer.add_scalar(f'lm-loss-validation/{key} {data_type}',
+                writer.add_scalar(f'step/lm-loss-validation/{key} {data_type}',
                                 total_loss_dict[key].item(),
                                 iteration)
-                writer.add_scalar(f'lm-loss-validation/{key} {data_type} vs samples',
+                writer.add_scalar(f'sample/lm-loss-validation/{key} {data_type} vs samples',
                                 total_loss_dict[key].item(),
                                 args.consumed_train_samples)
-                writer.add_scalar(f'lm-loss-validation/{key} {data_type} vs tokens',
+                writer.add_scalar(f'token/lm-loss-validation/{key} {data_type} vs tokens',
                                 total_loss_dict[key].item(),
                                 args.consumed_train_tokens)
                 if args.log_validation_ppl_to_tensorboard:
-                    writer.add_scalar(f'lm-loss-validation/{key} {data_type} ppl', ppl,
+                    writer.add_scalar(f'step/lm-loss-validation/{key} {data_type} ppl', ppl,
                                     iteration)
-                    writer.add_scalar(f'lm-loss-validation/{key} {data_type} ppl vs samples',
+                    writer.add_scalar(f'sample/lm-loss-validation/{key} {data_type} ppl vs samples',
                                     ppl, args.consumed_train_samples)
-                    writer.add_scalar(f'lm-loss-validation/{key} {data_type} ppl vs tokens',
+                    writer.add_scalar(f'token/lm-loss-validation/{key} {data_type} ppl vs tokens',
                                     ppl, args.consumed_train_tokens)
 
     if process_non_loss_data_func is not None and writer and is_last_rank():
