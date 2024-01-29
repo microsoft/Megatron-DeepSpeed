@@ -28,7 +28,7 @@ from torch import nn
 import torch.nn.functional as F
 
 
-def model_provider(pre_process=True, post_process=True):
+def model_provider(pre_process=True, post_process=True, ckpt_transfer_model=False):
     """Build the model."""
 
     print_rank_0('building GPT model ...')
@@ -36,6 +36,14 @@ def model_provider(pre_process=True, post_process=True):
 
     args = get_args()
     config = core_transformer_config_from_args(args)
+    
+    if ckpt_transfer_model:
+        return GPTModel(config=config,
+                    num_tokentypes=0,
+                    parallel_output=True,
+                    pre_process=pre_process,
+                    post_process=post_process)
+    
     with deepspeed.zero.Init(sequence_data_parallel_group=mpu.get_sequence_data_parallel_group(),
                              remote_device=None if args.remote_device == 'none' else args.remote_device,
                              config_dict_or_path=args.deepspeed_config_dict,

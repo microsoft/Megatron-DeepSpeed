@@ -124,8 +124,12 @@ def main():
     parser.add_argument('--no-checking', action='store_false',
                         help='Do not perform checking on the name and ordering of weights',
                         dest='checking')
+    parser.add_argument('--tokenizer-model', type=str, default=None,
+                        help='tokenizer-model, should be on python path')
+
 
     known_args, _ = parser.parse_known_args()
+    
     loader = load_plugin('loader', known_args.loader)
     saver = load_plugin('saver', known_args.saver)
 
@@ -133,7 +137,8 @@ def main():
     saver.add_arguments(parser)
 
     args = parser.parse_args()
-
+    if args.tokenizer_model is None:
+        args.tokenizer_model = args.load_dir+"/tokenizer.model"
     queue = mp.Queue(maxsize=args.max_queue_size)
 
     print("Starting saver...")
