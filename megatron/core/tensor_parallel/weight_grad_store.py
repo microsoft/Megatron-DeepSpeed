@@ -1,11 +1,21 @@
 import queue
 
 class WeightGradStore:
+
     cache = []
     weight_grad_queue = queue.Queue()
+    combine_bw = True
+
+    @classmethod
+    def set_combine_bw(cls, combine_bw):
+        # For the following backward pass, combine W with B and skip next W
+        cls.combine_bw = combine_bw
 
     @classmethod
     def put(cls, total_input, grad_output, weight, func):
+        if cls.combine_bw == True:
+            func(total_input, grad_output, weight)
+            return
         # Store the weight gradient computation of linear layers.
         cls.cache.append((total_input, grad_output, weight, func))
 

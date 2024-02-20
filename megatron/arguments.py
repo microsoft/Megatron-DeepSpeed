@@ -73,6 +73,9 @@ def validate_args(args, defaults={}):
     assert args.world_size % args.tensor_model_parallel_size == 0, 'world size'\
         ' ({}) is not divisible by tensor model parallel size ({})'.format(
             args.world_size, args.tensor_model_parallel_size)
+    # Zero bubble pipeline is defined on deepspeed's scheduler
+    if args.zero_bubble_pipeline:
+        assert args.deepspeed, 'Use DeepSpeed to use zero-bubble'
     # Pipeline model parallel size.
     args.pipeline_model_parallel_size = min(
         args.pipeline_model_parallel_size,
@@ -832,6 +835,8 @@ def _add_training_args(parser):
                        'uniformly divided recompute unit, '
                        '2) block: the number of individual Transformer layers '
                        'to recompute within each pipeline stage.')
+    group.add_argument('--zero-bubble-pipeline', action='store_true',
+                       help='Activate zero bubble pipeline parallelism schedule method')
 
     # deprecated
     # HACK: added back arguments because DeepSpeed still relies on the old

@@ -1,5 +1,3 @@
-from light.zbpp_light.zbpp_light import patch_deepspeed
-patch_deepspeed()
 # Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 
 """Pretrain GPT"""
