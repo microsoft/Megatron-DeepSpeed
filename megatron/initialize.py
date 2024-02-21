@@ -15,6 +15,8 @@ from megatron import get_adlr_autoresume
 from megatron import get_args
 from megatron import get_tensorboard_writer
 from megatron.core import mpu, tensor_parallel
+from megatron.core.pipeline_parallel.deepspeed_engine import _exec_backward_only_pass, _exec_weight_pass
+from megatron.core.pipeline_parallel.deepspeed_schedule import BackwardOnlyPass, WeightPass, ZeroBubble1POptimized
 from megatron.arguments import (parse_args, validate_args)
 from megatron.checkpointing import load_args_from_checkpoint
 from megatron.global_vars import set_global_variables
@@ -58,6 +60,7 @@ def initialize_megatron(extra_args_provider=None, args_defaults={},
     # set global args, build tokenizer, and set adlr-autoresume,
     # tensorboard-writer, and timers.
     set_global_variables(args)
+
     # torch.distributed initialization
     def finish_mpu_init():
         args = get_args()
@@ -200,7 +203,7 @@ def _initialize_distributed():
                   'skipping initialization ...', flush=True)
         args.rank = torch.distributed.get_rank()
         args.world_size = torch.distributed.get_world_size()
-    
+
     else:
         if args.rank == 0:
             print('> initializing torch distributed ...', flush=True)
@@ -214,18 +217,8 @@ def _initialize_distributed():
                 args.local_rank = device
 
             get_accelerator().set_device(device) # only do so when device_count > 0
-    
-    # print(args.ds_sequence_parallel_size)
-    # print(args.sequence_parallel)
-    # exit()
-    if args.zero_bubble_pipeline:
-        import deepspeed.runtime.pipe
-        from deepspeed.runtime.pipe import schedule
-        
-        from megatron.core.pipeline_parallel.deepspeed_schedule import BackwardOnlyPass, WeightPass, ZeroBubble1POptimized
-        from megatron.core.pipeline_parallel.deepspeed_engine import _exec_backward_only_pass, _exec_weight_pass
-        
 
+    if args.zero_bubble_pipeline:
         deepspeed.runtime.pipe.schedule.TrainSchedule = ZeroBubble1POptimized
         deepspeed.runtime.pipe.engine.PipelineEngine._INSTRUCTION_MAP.update(
             {
