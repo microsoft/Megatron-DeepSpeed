@@ -393,6 +393,12 @@ def get_model(model_provider_func, model_type=ModelType.encoder_or_decoder, wrap
             sum([sum([p.ds_numel if hasattr(p,'ds_id') else p.nelement() for p in model_module.parameters()])
                  for model_module in model])), flush=True)
 
+    # Print the total number of parameters (for documentation) 
+    if mpu.get_data_parallel_rank() == 0:
+        print(' > total number of parameters in model: {}'.format(
+            sum([sum([p.ds_numel if hasattr(p,'ds_id') else p.nelement() for p in model_module.parameters()])
+                 for model_module in model])), flush=True)
+        
     if args.deepspeed:
         return model
 
