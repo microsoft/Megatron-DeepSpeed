@@ -16,7 +16,7 @@ from .utils import scaled_init_method_normal
 
 from megatron.model import LayerNorm, RMSNorm
 from .language_model import EmbeddingPipe
-from .transformer import ParallelTransformerLayerPipe, LMHeadPipe
+from .transformer import ParallelTransformerLayerPipe, LMHeadPipe, get_num_experts_per_layer
 from deepspeed.pipe import PipelineModule, LayerSpec, TiedLayerSpec
 
 
@@ -360,12 +360,14 @@ class GPTModelPipe(PipelineModule,MegatronModule):
                                             embedding_weights_in_fp32=args.embedding_weights_in_fp32,
                                             tied_weight_attr='word_embeddings_weight'))
 
+        experts_per_layer = get_num_experts_per_layer(args.num_experts, args.num_layers, args.expert_interval)
         for layer_idx in range(args.num_layers):
             self.specs.append(
                 LayerSpec(ParallelTransformerLayerPipe,
-                    config,
-                    layer_number=layer_idx,
-                    self_attn_mask_type=AttnMaskType.causal))
+                          config,
+                          layer_number=layer_idx,
+                          self_attn_mask_type=AttnMaskType.causal,
+                          num_experts=experts_per_layer[layer_idx]))
 
         # Final layernorm after transformer layers
         if args.normalization == 'layernorm':

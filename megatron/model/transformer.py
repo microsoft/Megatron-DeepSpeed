@@ -1478,6 +1478,19 @@ def _get_layer_type(model_type, default_layer_type, retro_layer_numbers,
         return default_layer_type
 
 
+def get_num_experts_per_layer(num_experts: list, num_layers: int, expert_interval: int, offset: int = 0) -> list:
+    assert len(num_experts) == 1 or len(num_experts) == num_layers // expert_interval, \
+        'num_experts must be either a single value or a list of the same length as the number of MoE layers'
+    if len(num_experts) == 1:
+        num_experts = num_experts * (num_layers // expert_interval)
+    experts_per_layer = []
+    for i in range(num_layers):
+        layer_num = i + 1 + offset
+        n_e = num_experts[(layer_num-1) // expert_interval] if layer_num % expert_interval == 0 else 1
+        experts_per_layer.append(n_e)
+    return experts_per_layer
+
+
 class ParallelTransformer(MegatronModule):
     """Transformer class."""
 
@@ -1661,21 +1674,12 @@ class ParallelTransformer(MegatronModule):
             self.num_layers = 1
             self.layers = torch.nn.ModuleList([ NoopTransformerLayer(1) ])
         else:
-            assert len(num_experts) == 1 or len(num_experts) == args.num_layers // args.expert_interval, \
-            'num_experts must be either a single value or a list of the same length as the number of MoE layers'
-
-            # Create the list of MoE experts
-            if len(num_experts) == 1:
-                num_experts = num_experts * (args.num_layers // args.expert_interval)
-
             # Build the layers
             self.layers = []
+            experts_per_layer = get_num_experts_per_layer(num_experts, self.num_layers, args.expert_interval, offset)
             for i in range(self.num_layers):
                 layer_num = i + 1 + offset
-                if layer_num % args.expert_interval == 0:
-                    n_e = num_experts[(layer_num-1) // args.expert_interval]
-                else:
-                    n_e = 1
+                n_e = experts_per_layer[i]
                 self.layers.append(build_layer(layer_num, n_e))
             self.layers = torch.nn.ModuleList(self.layers)
 
