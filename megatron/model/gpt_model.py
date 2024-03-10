@@ -3,6 +3,7 @@
 """GPT-2 model."""
 
 import torch
+from collections import OrderedDict
 
 from megatron import get_args
 from megatron.core import mpu, tensor_parallel, sequence_parallel
@@ -456,3 +457,11 @@ class GPTModelPipe(PipelineModule,MegatronModule):
 
     def universal_checkpoint_info(self):
         return UniversalCheckpointInfo(using_model_pipe=True).get()
+
+    def get_additional_losses(self):
+        if not self.is_moe_model:
+            return None
+        return OrderedDict({
+            'lm loss': self.last_lm_loss,
+            'moe loss': self.last_moe_loss
+        })
