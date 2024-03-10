@@ -363,6 +363,17 @@ class GPTModelPipe(PipelineModule,MegatronModule):
 
         experts_per_layer = get_num_experts_per_layer(args.num_experts, args.num_layers, args.expert_interval)
         self.is_moe_model = any(n_experts > 1 for n_experts in experts_per_layer)
+
+        # Currently PipelineEngine does not support more than 1 pipe and/or grad partitioned tensors that
+        # require grads.
+        # When using MoE, we have 2 tensors that are passed along pipeline stages and both require grads.
+        # Therefore, verify that both pipe_partitioned / grad_partitioned are not enabled
+        if self.is_moe_model and args.pipeline_model_parallel_size > 1 and args.tensor_model_parallel_size > 1:
+            pipe_partitioned_enabled = args.deepspeed_config_dict.get('pipeline', {}).get('pipe_partitioned', False)
+            grad_partitioned_enabled = args.deepspeed_config_dict.get('pipeline', {}).get('grad_partitioned', False)
+            assert not pipe_partitioned_enabled and not grad_partitioned_enabled, \
+                'Pipe and/or Grad partitioning are not supported for MoE model'
+
         for layer_idx in range(args.num_layers):
             self.specs.append(
                 LayerSpec(ParallelTransformerLayerPipe,
