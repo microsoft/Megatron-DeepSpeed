@@ -251,30 +251,37 @@ class _ReduceScatterToSequenceParallelRegion(torch.autograd.Function):
 # Helper functions.
 # -----------------
 
+@torch.compiler.disable
 def copy_to_tensor_model_parallel_region(input_):
     return _CopyToModelParallelRegion.apply(input_)
 
 
+@torch.compiler.disable
 def reduce_from_tensor_model_parallel_region(input_):
     return _ReduceFromModelParallelRegion.apply(input_)
 
 
+@torch.compiler.disable
 def scatter_to_tensor_model_parallel_region(input_):
     return _ScatterToModelParallelRegion.apply(input_)
 
 
+@torch.compiler.disable
 def gather_from_tensor_model_parallel_region(input_):
     return _GatherFromModelParallelRegion.apply(input_)
 
 
+@torch.compiler.disable
 def scatter_to_sequence_parallel_region(input_):
     return _ScatterToSequenceParallelRegion.apply(input_)
 
 
+@torch.compiler.disable
 def gather_from_sequence_parallel_region(input_, tensor_parallel_output_grad=True):
     return _GatherFromSequenceParallelRegion.apply(input_, tensor_parallel_output_grad)
 
 
+@torch.compiler.disable
 def reduce_scatter_to_sequence_parallel_region(input_):
     return _ReduceScatterToSequenceParallelRegion.apply(input_)
 
