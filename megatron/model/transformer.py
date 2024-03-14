@@ -17,10 +17,11 @@ from megatron.model.enums import AttnMaskType, LayerType, AttnType
 from megatron.model.fused_softmax import FusedScaleMaskSoftmax
 from megatron.model.fused_bias_gelu import bias_gelu_impl
 from megatron.model.rotary_pos_embedding import apply_rotary_pos_emb
-from megatron.model.utils import attention_mask_func, openai_gelu, erf_gelu
+from megatron.model.utils import attention_mask_func, openai_gelu, erf_gelu, modify_attention_mask_for_sliding_window
 import deepspeed
 from deepspeed.moe.layer import MoE
 from deepspeed.accelerator import get_accelerator
+from .cache import CacheView, RotatingBufferCache
 
 try:
     from deepspeed.sequence.layer import DistributedAttention
@@ -277,12 +278,22 @@ class CoreAttention(MegatronModule):
         # Raw attention scores. [b, np, s, s]
         # ===================================
 
+        # sq or sk represents the length of the input sequences
+        # b denotes how many sequences are processed in parallel
+        # In distributed training, the model may be partitioned across multiple GPUs or nodes.
+        # np represents the division of the model's parameters across these partitions.
+        # hn represents the dimensionality of each attention head
+
         # [b, np, sq, sk]
         output_size = (query_layer.size(1),
                        query_layer.size(2),
                        query_layer.size(0),
                        key_layer.size(0))
 
+        # originally, we separate b and np in handling model parallelism and batch processing
+        # b * np represents all the data points effectively and compute them once
+
+        # -1 is a placeholder that it maintains the size of hn.
         # [sq, b, np, hn] -> [sq, b * np, hn]
         query_layer = query_layer.view(output_size[2],
                                        output_size[0] * output_size[1], -1)
@@ -290,33 +301,38 @@ class CoreAttention(MegatronModule):
         key_layer = key_layer.view(output_size[3],
                                    output_size[0] * output_size[1], -1)
 
+
         # preallocting input tensor: [b * np, sq, sk]
         matmul_input_buffer = parallel_state.get_global_memory_buffer().get_tensor(
             (output_size[0]*output_size[1], output_size[2], output_size[3]),
             query_layer.dtype, "mpu")
 
         # Raw attention scores. [b * np, sq, sk]
+        # baddbmm is used for batched matrix-matrix multiplication
+        # Since each matrxi in b * np represent each batch in each partition,
+        # sq and sk are effectively multiplied in matrix multiplication.
         matmul_result = torch.baddbmm(
             matmul_input_buffer,
-            query_layer.transpose(0, 1),   # [b * np, sq, hn]
-            key_layer.transpose(0, 1).transpose(1, 2),  # [b * np, hn, sk]
-            beta=0.0, alpha=(1.0/self.norm_factor))
+            query_layer.transpose(0, 1),   # [sq, b * np, hn] -> [b * np, sq, hn]
+            key_layer.transpose(0, 1).transpose(1, 2),  # [sk, b * np, hn] -> [b * np, hn, sk]
+            beta=0.0, alpha=(1.0/self.norm_factor)) # alpha normalize the score
 
-        # change view to [b, np, sq, sk]
+        # change view to [b, np, sq, sk] Re-separate b and np
         attention_scores = matmul_result.view(*output_size)
 
         # ===========================
         # Attention probs and dropout
         # ===========================
 
-        # attention scores and attention mask [b, np, sq, sk]
+        # softmax attention scores and attention mask [b, np, sq, sk]
         attention_probs = self.scale_mask_softmax(attention_scores,
                                                   attention_mask)
+        # why do we mask attention after computation of attention?
 
         # This is actually dropping out entire tokens to attend to, which might
         # seem a bit unusual, but is taken from the original Transformer paper.
         if not self.sequence_parallel:
-            with tensor_parallel.get_cuda_rng_tracker().fork():
+            with tensor_parallel.get_cuda_rng_tracker().fork(): # create new random number generator state for CUDA
                 attention_probs = self.attention_dropout(attention_probs)
         else:
             attention_probs = self.attention_dropout(attention_probs)
@@ -326,7 +342,7 @@ class CoreAttention(MegatronModule):
         # =========================
 
         # value_layer -> context layer.
-        # [sk, b, np, hn] --> [b, np, sq, hn]
+        # [sk, b, np, hn] --> [b, np, sq, hn] (In this context, sv = sq)
 
         # context layer shape: [b, np, sq, hn]
         output_size = (value_layer.size(1),
@@ -344,6 +360,8 @@ class CoreAttention(MegatronModule):
 
         # matmul: [b * np, sq, hn]
         context_layer = torch.bmm(attention_probs, value_layer.transpose(0, 1))
+        # value_layer.transpose(0, 1) = [b * np, sk, hn]
+        # matrix multiplication [b * np, sq, sk] * [b * np, sk, hn] = [b * np, sq, hn]
 
         # change view [b, np, sq, hn]
         context_layer = context_layer.view(*output_size)
@@ -466,7 +484,7 @@ class FlashSelfAttentionTriton(torch.nn.Module):
         assert q.is_cuda
         q, k, v = [rearrange(x, 's b ... -> b s ...').contiguous()
                        for x in (q, k, v)]
-        
+
         output = flash_attn_func(q, k, v, None, self.causal)
         output = rearrange(output, 'b s h d -> s b (h d)').contiguous()
         return output
@@ -490,6 +508,7 @@ class ParallelAttention(MegatronModule):
         self.sequence_parallel = config.sequence_parallel
         self.num_attention_heads = config.num_attention_heads
         self.num_key_value_heads = config.num_key_value_heads
+        # A boolean indicating if Grouped Query Attention is used
         self.use_gqa = (self.num_attention_heads != self.num_key_value_heads)
 
         self.use_flash_attn = (args.use_flash_attn_v1 or args.use_flash_attn_triton or args.use_flash_attn_v2) \
@@ -518,12 +537,18 @@ class ParallelAttention(MegatronModule):
             if rearrange is None:
                 raise ImportError('einops is not installed, please install with pip install einops')
 
+        # Each of these vectors (Q, K, V) is obtained by multiplying the input embedding by a weight matrix.
+        # The size of this weight matrix, and hence the size of the transformed vectors, is what projection_size
         projection_size = config.kv_channels * config.num_attention_heads
 
         # Per attention head and per partition values.
+        # world_size represents the number of GPUs (or nodes) over which
+        # the model's tensors are distributed in a parallel computing environment.
         world_size = parallel_state.get_tensor_model_parallel_world_size()
+        # size of the projection for each attention head
         self.hidden_size_per_attention_head = core.utils.divide(
             projection_size, config.num_attention_heads)
+        # how many attention heads are assigned to each GPU in distributed setup
         self.num_attention_heads_per_partition = core.utils.divide(
             config.num_attention_heads, world_size)
 
@@ -537,6 +562,7 @@ class ParallelAttention(MegatronModule):
             kv_projection_size, config.num_key_value_heads)
 
         # Strided linear layer.
+        # Get query, key, value from hidden state
         if attention_type == AttnType.self_attn:
             self.query_key_value = tensor_parallel.ColumnParallelLinear(
                 config.hidden_size,
@@ -564,7 +590,9 @@ class ParallelAttention(MegatronModule):
                 bias=config.add_bias_linear,
                 gather_output=False)
 
-        # Currently FlashAttention only works with causal mask
+        # Currently FlashAttention only works with causal mask, where each token only attends to preceding tokens.
+        # So, casual mask will not work on sliding window attention?
+        # We need to check this.
         if self.use_flash_attn_triton:
             local_attn = FlashSelfAttentionTriton(causal=True, attention_dropout=args.attention_dropout)
         elif self.use_flash_attn:
@@ -595,7 +623,18 @@ class ParallelAttention(MegatronModule):
             input_is_parallel=True,
             skip_bias_add=True)
 
+        ### Rolling Buffer Cache
+        self.sliding_window_size = config.sliding_window_size
+        self.rolling_buffer_usage = config.rolling_buffer_usage
+        self.n_kv_heads = config.n_kv_heads or self.num_attention_heads
+        self.head_dim = self.hidden_size_per_attention_head
+        self.max_batch_size = config.max_batch_size
+        self.n_layers = config.n_layers
+        self.layer_id = self.layer_number
+        self.cache = None
 
+    # save memory when training large models. By checkpointing,
+    # we minimize the amount of GPU memory needed to store intermediate results for the backward pass
     def _checkpointed_attention_forward(self, query_layer, key_layer,
                                         value_layer, attention_mask,
                                         rotary_pos_emb=None):
@@ -619,6 +658,7 @@ class ParallelAttention(MegatronModule):
 
         return hidden_states
 
+    # responsible for pre-allocating memory for a tensor
     def _allocate_memory(self, inference_max_sequence_len, batch_size):
         return torch.empty(
             inference_max_sequence_len,
@@ -628,6 +668,7 @@ class ParallelAttention(MegatronModule):
             dtype=self.params_dtype,
             device=get_accelerator().current_device_name())
 
+    # replicate num_key_value_heads_per_parition n_rep times and concatenate
     def repeat_kv(self, hidden_states, n_rep):
         slen, batch, num_key_value_heads_per_partition, head_dim = hidden_states.shape
         if n_rep == 1:
@@ -637,7 +678,7 @@ class ParallelAttention(MegatronModule):
         return hidden_states.reshape(slen, batch,
                                      num_key_value_heads_per_partition * n_rep,
                                      head_dim)
-                                     
+
     def split_tensor(self, mixed_x_layer):
         query_layer = mixed_x_layer[:, :, :, :-2, :].reshape(mixed_x_layer.shape[:2] + (-1, self.hidden_size_per_attention_head))
         key_layer = mixed_x_layer[:, :, :, -2, :]
@@ -647,14 +688,14 @@ class ParallelAttention(MegatronModule):
 
     def forward(self, hidden_states, attention_mask,
                 encoder_output=None, inference_params=None,
-                rotary_pos_emb=None):
+                rotary_pos_emb=None, layer_past=None):
         # hidden_states: [sq, b, h]
 
         # =================================================
         # Pre-allocate memory for key-values for inference.
         # =================================================
         is_first_step = False
-        if inference_params:
+        if inference_params: # check if during inference
             if self.layer_number not in inference_params.key_value_memory_dict:
                 inf_max_seq_len = inference_params.max_sequence_len
                 inf_max_batch_size = inference_params.max_batch_size
@@ -674,6 +715,8 @@ class ParallelAttention(MegatronModule):
         # =====================
 
         if self.attention_type == AttnType.self_attn:
+            # Essentially, convert hidden_state into query, key, and value
+
             # Attention heads [sq, b, h] --> [sq, b, ((nq + 2 * nkv) * hn)]
             mixed_x_layer, _ = self.query_key_value(hidden_states)
 
@@ -694,6 +737,9 @@ class ParallelAttention(MegatronModule):
                 value_layer = self.repeat_kv(value_layer,
                                              self.num_key_value_groups)
         else:
+            # Cross-attn's kv are derived from encoder_output,
+            # query is derived from hidden state
+            # used in the connection between encoder and decoder
             assert not self.use_gqa, 'GQA + cross-attn not tested yet'
 
             # Attention heads [sk, b, h] --> [sk, b, (np * 2 * hn)]
@@ -716,6 +762,20 @@ class ParallelAttention(MegatronModule):
                 (self.num_attention_heads_per_partition,
                  self.hidden_size_per_attention_head)
             query_layer = query_layer.view(*new_tensor_shape)
+
+        if self.sliding_window_size is not None:
+            attention_mask = modify_attention_mask_for_sliding_window(attention_mask, self.sliding_window_size)
+
+        # if self.cache is not None:
+            # Modify the attention mask for sliding window, if necessary
+            # Retrieve key and value from cache if layer_past is not provided
+        if self.rolling_buffer_usage:
+            self.cache.reset()
+            cache_metadata = self.cache.get_input_metadata(seqlens=[hidden_states.size(0)])
+            self.cache.init_kvseqlens(hidden_states.size(1))
+
+            cache_view = self.cache.get_view(layer_id=self.layer_id, metadata=cache_metadata)
+            key_layer, value_layer = cache_view.interleave_kv(key_layer, value_layer)
 
         # ==================================
         # Adjust key and value for inference
@@ -1732,7 +1792,7 @@ class ParallelTransformer(MegatronModule):
                     moe_losses.append(moe_loss)
                 return (x_, *moe_losses)
             return custom_forward
-        
+
         if args.deepspeed and args.deepspeed_activation_checkpointing:
             moe_losses = []
             # Make sure memory is freed.
@@ -1809,7 +1869,7 @@ class ParallelTransformer(MegatronModule):
                                 hidden_states, attention_mask,
                                 encoder_output, enc_dec_attn_mask,
                                 None, None, None, None, rotary_pos_emb)
-                            
+
                     moe_losses.extend(local_moe_losses)
             else:
                 raise ValueError("Invalid activation recompute method.")
