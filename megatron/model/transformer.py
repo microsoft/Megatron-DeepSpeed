@@ -302,6 +302,9 @@ class CoreAttention(MegatronModule):
                                    output_size[0] * output_size[1], -1)
 
 
+        # Here, we apply Sliding Window Attention to query and key layer
+
+
         # preallocting input tensor: [b * np, sq, sk]
         matmul_input_buffer = parallel_state.get_global_memory_buffer().get_tensor(
             (output_size[0]*output_size[1], output_size[2], output_size[3]),
@@ -388,6 +391,7 @@ class FlashSelfAttention(torch.nn.Module):
                            (default: 0.0)
     """
     def __init__(self, causal=False, softmax_scale=None, attention_dropout=0.0,
+                 window_size=(-1, 1),
                  device=None, dtype=None):
         super().__init__()
         assert flash_attn_unpadded_func is not None or flash_attn_varlen_func is not None or flash_attn_builder is not None, \
@@ -400,6 +404,7 @@ class FlashSelfAttention(torch.nn.Module):
         # Use FlashAttention-2 when args.use_flash_attn_v2 is True
         args = get_args()
         self.flash_attn_func = flash_attn_varlen_func if args.use_flash_attn_v2 else flash_attn_unpadded_func
+        self.window_size = window_size
 
     def forward(self, q, k, v):
         """Implements the multihead softmax attention.
@@ -445,9 +450,9 @@ class FlashSelfAttention(torch.nn.Module):
         output = self.flash_attn_func(
             q, k, v, cu_seqlens_q, cu_seqlens_k, seqlen_q, seqlen_k,
             dropout_p,
-            softmax_scale=self.softmax_scale, causal=is_causal
+            softmax_scale=self.softmax_scale, causal=is_causal, window_size=self.window_size
         ) if get_accelerator().device_name() == 'cuda' else flash_attn_builder.flash_attn_func(
-            q, k, v, self.dropout_p, self.softmax_scale, is_causal
+            q, k, v, self.dropout_p, self.softmax_scale, is_causal, window_size=self.window_size
         )
 
         output = rearrange(output, '(b s) ... -> b s ...', b=batch_size) if get_accelerator().device_name() == 'cuda' else rearrange(
@@ -465,6 +470,7 @@ class FlashSelfAttentionTriton(torch.nn.Module):
                            (default: 0.0)
     """
     def __init__(self, causal=False, softmax_scale=None, attention_dropout=0.0,
+                 window_size=(-1, 1),
                  device=None, dtype=None):
         super().__init__()
         assert flash_attn_func is not None, ('Triton version of FlashAttention is not installed.')
@@ -472,6 +478,7 @@ class FlashSelfAttentionTriton(torch.nn.Module):
         self.causal = causal
         self.softmax_scale = softmax_scale
         self.dropout_p = attention_dropout
+        self.window_size = window_size
 
     def forward(self, q, k, v):
         """Implements the multihead softmax attention.
@@ -485,7 +492,7 @@ class FlashSelfAttentionTriton(torch.nn.Module):
         q, k, v = [rearrange(x, 's b ... -> b s ...').contiguous()
                        for x in (q, k, v)]
 
-        output = flash_attn_func(q, k, v, None, self.causal)
+        output = flash_attn_func(q, k, v, None, self.causal, window_size=self.window_size)
         output = rearrange(output, 'b s h d -> s b (h d)').contiguous()
         return output
 
@@ -594,12 +601,15 @@ class ParallelAttention(MegatronModule):
         # So, casual mask will not work on sliding window attention?
         # We need to check this.
         if self.use_flash_attn_triton:
-            local_attn = FlashSelfAttentionTriton(causal=True, attention_dropout=args.attention_dropout)
+            local_attn = FlashSelfAttentionTriton(causal=True, attention_dropout=args.attention_dropout, window_size=self.window_size)
         elif self.use_flash_attn:
-            local_attn = FlashSelfAttention(causal=True, attention_dropout=config.attention_dropout)
+            local_attn = FlashSelfAttention(causal=True, attention_dropout=config.attention_dropout, window_size=self.window_size)
         else:
             local_attn = CoreAttention(self.layer_number, config, self.attn_mask_type)
 
+        # enable_ds_sequence_parallel?? dist_attn
+        #
+        #
         self.enable_ds_sequence_parallel = parallel_state.get_sequence_parallel_world_size() > 1 \
                                            or args.force_ds_sequence_parallel
         if self.enable_ds_sequence_parallel:
@@ -624,6 +634,7 @@ class ParallelAttention(MegatronModule):
             skip_bias_add=True)
 
         ### Rolling Buffer Cache
+        ##TODO Implementation of RBC is wrong!
         self.sliding_window_size = config.sliding_window_size
         self.rolling_buffer_usage = config.rolling_buffer_usage
         self.n_kv_heads = config.n_kv_heads or self.num_attention_heads
@@ -632,6 +643,11 @@ class ParallelAttention(MegatronModule):
         self.n_layers = config.n_layers
         self.layer_id = self.layer_number
         self.cache = None
+
+        # Sliding Window Attention
+        self.window_size = config.window_size
+
+
 
     # save memory when training large models. By checkpointing,
     # we minimize the amount of GPU memory needed to store intermediate results for the backward pass
@@ -688,7 +704,7 @@ class ParallelAttention(MegatronModule):
 
     def forward(self, hidden_states, attention_mask,
                 encoder_output=None, inference_params=None,
-                rotary_pos_emb=None, layer_past=None):
+                rotary_pos_emb=None):
         # hidden_states: [sq, b, h]
 
         # =================================================
@@ -763,12 +779,10 @@ class ParallelAttention(MegatronModule):
                  self.hidden_size_per_attention_head)
             query_layer = query_layer.view(*new_tensor_shape)
 
-        if self.sliding_window_size is not None:
-            attention_mask = modify_attention_mask_for_sliding_window(attention_mask, self.sliding_window_size)
-
         # if self.cache is not None:
             # Modify the attention mask for sliding window, if necessary
             # Retrieve key and value from cache if layer_past is not provided
+        ##TODO Wrong implementation of RBC, Need to be fixed!!
         if self.rolling_buffer_usage:
             self.cache.reset()
             cache_metadata = self.cache.get_input_metadata(seqlens=[hidden_states.size(0)])
