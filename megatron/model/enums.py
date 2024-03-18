@@ -8,7 +8,7 @@ class LayerType(enum.Enum):
     retro_encoder = 3
     retro_decoder = 4
     retro_decoder_with_retriever = 5
- 
+
 class AttnType(enum.Enum):
     self_attn = 1
     cross_attn = 2
@@ -16,6 +16,10 @@ class AttnType(enum.Enum):
 class AttnMaskType(enum.Enum):
     padding = 1
     causal = 2
+    # sliding_window = 3
+    # Sliding Window Attention is enabled when config.window_size != (-1, -1)
+    # and Flash Attention is used with casual attention.
+
 
 # For backward compatibility with old model checkpoints
 from megatron.core.enums import ModelType
