@@ -17,7 +17,7 @@ from megatron.model.enums import AttnMaskType, LayerType, AttnType
 from megatron.model.fused_softmax import FusedScaleMaskSoftmax
 from megatron.model.fused_bias_gelu import bias_gelu_impl
 from megatron.model.rotary_pos_embedding import apply_rotary_pos_emb
-from megatron.model.utils import attention_mask_func, openai_gelu, erf_gelu, modify_attention_mask_for_sliding_window
+from megatron.model.utils import attention_mask_func, openai_gelu, erf_gelu
 import deepspeed
 from deepspeed.moe.layer import MoE
 from deepspeed.accelerator import get_accelerator
@@ -67,6 +67,21 @@ flash_attn_builder = None
         hyperparameters: transformer hyperparameters
 """
 
+
+def generate_block_kvcache(seqlen_k, paged_kv_block_size, batch_size, device):
+    num_blocks = math.ceil(seqlen_k / paged_kv_block_size) * batch_size * 3
+    # k_cache_paged = torch.randn(num_blocks, paged_kv_block_size, nheads_k, d, device=device, dtype=dtype)
+    # v_cache_paged = torch.randn(num_blocks, paged_kv_block_size, nheads_k, d, device=device, dtype=dtype)
+
+    block_table = rearrange(
+        torch.randperm(num_blocks, dtype=torch.int32, device=device),
+        "(b nblocks) -> b nblocks",
+        b=batch_size
+    )
+
+    return block_table
+
+
 class DropPath(MegatronModule):
     """Drop paths (Stochastic Depth) per sample
     (when applied in main path of residual blocks).
@@ -88,6 +103,7 @@ class DropPath(MegatronModule):
         random_tensor.floor_()  # binarize
         output = hidden_state.div(keep_prob) * random_tensor
         return output
+
 
 class ParallelMLP(MegatronModule):
     """MLP.
@@ -171,6 +187,7 @@ class ParallelMLP(MegatronModule):
         # [s, b, h]
         output, output_bias = self.dense_4h_to_h(intermediate_parallel)
         return output, output_bias
+
 
 class SwitchMLP(MegatronModule):
     """
@@ -391,7 +408,7 @@ class FlashSelfAttention(torch.nn.Module):
                            (default: 0.0)
     """
     def __init__(self, causal=False, softmax_scale=None, attention_dropout=0.0,
-                 window_size=(-1, 1),
+                 window_size=(-1, 1), block_table=None,
                  device=None, dtype=None):
         super().__init__()
         assert flash_attn_unpadded_func is not None or flash_attn_varlen_func is not None or flash_attn_builder is not None, \
@@ -405,6 +422,7 @@ class FlashSelfAttention(torch.nn.Module):
         args = get_args()
         self.flash_attn_func = flash_attn_varlen_func if args.use_flash_attn_v2 else flash_attn_unpadded_func
         self.window_size = window_size
+        self.block_table = block_table
 
     def forward(self, q, k, v):
         """Implements the multihead softmax attention.
@@ -447,10 +465,11 @@ class FlashSelfAttention(torch.nn.Module):
                         device=q.device) if get_accelerator().device_name() == 'cuda' else None
             dropout_p = 0
 
+        #TODO Implement Block table
         output = self.flash_attn_func(
             q, k, v, cu_seqlens_q, cu_seqlens_k, seqlen_q, seqlen_k,
             dropout_p,
-            softmax_scale=self.softmax_scale, causal=is_causal, window_size=self.window_size
+            softmax_scale=self.softmax_scale, causal=is_causal, window_size=self.window_size, block_table=self.block_table
         ) if get_accelerator().device_name() == 'cuda' else flash_attn_builder.flash_attn_func(
             q, k, v, self.dropout_p, self.softmax_scale, is_causal, window_size=self.window_size
         )
@@ -492,6 +511,7 @@ class FlashSelfAttentionTriton(torch.nn.Module):
         q, k, v = [rearrange(x, 's b ... -> b s ...').contiguous()
                        for x in (q, k, v)]
 
+        #TODO block table
         output = flash_attn_func(q, k, v, None, self.causal, window_size=self.window_size)
         output = rearrange(output, 'b s h d -> s b (h d)').contiguous()
         return output
@@ -505,7 +525,8 @@ class ParallelAttention(MegatronModule):
 
     def __init__(self, config, layer_number,
                  attention_type=AttnType.self_attn,
-                 attn_mask_type=AttnMaskType.padding):
+                 attn_mask_type=AttnMaskType.padding,
+                 block_table=None):
         super(ParallelAttention, self).__init__()
         args = get_args()
         self.layer_number = max(1, layer_number)
@@ -603,7 +624,7 @@ class ParallelAttention(MegatronModule):
         if self.use_flash_attn_triton:
             local_attn = FlashSelfAttentionTriton(causal=True, attention_dropout=args.attention_dropout, window_size=self.window_size)
         elif self.use_flash_attn:
-            local_attn = FlashSelfAttention(causal=True, attention_dropout=config.attention_dropout, window_size=self.window_size)
+            local_attn = FlashSelfAttention(causal=True, attention_dropout=config.attention_dropout, window_size=self.window_size, block_table=self.block_table)
         else:
             local_attn = CoreAttention(self.layer_number, config, self.attn_mask_type)
 
@@ -633,19 +654,10 @@ class ParallelAttention(MegatronModule):
             input_is_parallel=True,
             skip_bias_add=True)
 
-        ### Rolling Buffer Cache
-        ##TODO Implementation of RBC is wrong!
-        self.sliding_window_size = config.sliding_window_size
-        self.rolling_buffer_usage = config.rolling_buffer_usage
-        self.n_kv_heads = config.n_kv_heads or self.num_attention_heads
-        self.head_dim = self.hidden_size_per_attention_head
-        self.max_batch_size = config.max_batch_size
-        self.n_layers = config.n_layers
-        self.layer_id = self.layer_number
-        self.cache = None
-
         # Sliding Window Attention
         self.window_size = config.window_size
+        # Paged Attention
+        self.block_table = block_table
 
 
 
@@ -778,18 +790,6 @@ class ParallelAttention(MegatronModule):
                 (self.num_attention_heads_per_partition,
                  self.hidden_size_per_attention_head)
             query_layer = query_layer.view(*new_tensor_shape)
-
-        # if self.cache is not None:
-            # Modify the attention mask for sliding window, if necessary
-            # Retrieve key and value from cache if layer_past is not provided
-        ##TODO Wrong implementation of RBC, Need to be fixed!!
-        if self.rolling_buffer_usage:
-            self.cache.reset()
-            cache_metadata = self.cache.get_input_metadata(seqlens=[hidden_states.size(0)])
-            self.cache.init_kvseqlens(hidden_states.size(1))
-
-            cache_view = self.cache.get_view(layer_id=self.layer_id, metadata=cache_metadata)
-            key_layer, value_layer = cache_view.interleave_kv(key_layer, value_layer)
 
         # ==================================
         # Adjust key and value for inference
@@ -939,7 +939,7 @@ class ParallelTransformerLayer(MegatronModule):
     def __init__(self, config,
                  layer_number, layer_type=LayerType.encoder,
                  self_attn_mask_type=AttnMaskType.padding,
-                 drop_path_rate=0., num_experts=1):
+                 drop_path_rate=0., num_experts=1, paged_kv_block_size=256):
         # retriever=None):
         args = get_args()
 
@@ -970,6 +970,8 @@ class ParallelTransformerLayer(MegatronModule):
         else:
             self.input_layernorm = RMSNorm(config.hidden_size, config.layernorm_epsilon)
         # Self attention.
+        # set paged_kv_block_size
+        self.paged_kv_block_size = paged_kv_block_size
         self.self_attention = ParallelAttention(
             config,
             layer_number,
@@ -1276,6 +1278,16 @@ class ParallelTransformerLayer(MegatronModule):
 
         return retriever_output, layernorm_input, layernorm_output
 
+    def compute_block_table(self, hidden_states):
+        sequence_length, batch_size, _ = hidden_states.shape
+        num_blocks = math.ceil(sequence_length  / self.paged_kv_block_size) * batch_size * 3
+        block_table = rearrange(
+            torch.randperm(num_blocks, dtype=torch.int32, device=get_accelerator().device_name()),
+            "(b nblocks) -> b nblocks",
+            b=batch_size,
+        )
+        return block_table
+
     def forward(self, hidden_states, attention_mask=None,
                 encoder_output=None, enc_dec_attn_mask=None,
                 retriever_input=None,
@@ -1288,13 +1300,17 @@ class ParallelTransformerLayer(MegatronModule):
         # Layer norm at the beginning of the transformer layer.
         layernorm_output = self.input_layernorm(hidden_states)
 
+        block_table = self.compute_block_table(hidden_states)
+
         # Self attention.
         attention_output, attention_bias = \
             self.self_attention(
                 layernorm_output,
                 attention_mask,
                 inference_params=inference_params,
-                rotary_pos_emb=rotary_pos_emb)
+                rotary_pos_emb=rotary_pos_emb,
+                block_table=block_table
+            )
 
         # Residual connection.
         if self.apply_residual_connection_post_layernorm:

@@ -27,34 +27,44 @@ class RotatingCacheInputMetadata:
     mask: AttentionBias
     seqlens: List[int]
 
-
+# l1 = [a1, a2, a3] l2 = [b1, b2, b3], then the output is
+# [a1, b1, a2, b2, a3, b3]
 def interleave_list(l1: List[torch.Tensor], l2: List[torch.Tensor]):
     assert len(l1) == len(l2)
     return [v for pair in zip(l1, l2) for v in pair]
 
-
+# cache: A tensor representing the rolling buffer cache
+# seqlen: The length of the current sequence being processed
 def unrotate(cache: torch.Tensor, seqlen: int) -> torch.Tensor:
     assert cache.ndim == 3  # (W, H, D)
+    # W: sliding window size, H: the number of heads in multi-head attention
+    # D: dimensionality of each head
+
+    # seqlen mod W
+    # the keys and values for the timestep i are stored
+    # in position i mod W of the cache
     position = seqlen % cache.shape[0]
-    if seqlen < cache.shape[0]:
+    if seqlen < cache.shape[0]: # seq hasn't yet filled up the cache.
         return cache[:seqlen]
-    elif position == 0:
+    elif position == 0: # seqlen is a multiple of windows
         return cache
     else:
+        # Swap elements in cache, but WHY???
         return torch.cat([cache[position:], cache[:position]], dim=0)
 
 
 class CacheView:
     def __init__(self, cache_k: torch.Tensor, cache_v: torch.Tensor, metadata: RotatingCacheInputMetadata, kv_seqlens: torch.Tensor):
-        self.cache_k = cache_k
-        self.cache_v = cache_v
-        self.kv_seqlens = kv_seqlens
-        self.metadata = metadata
+        self.cache_k = cache_k # rolling caches for keys
+        self.cache_v = cache_v # rolling caches for values
+        self.kv_seqlens = kv_seqlens # tensor containing the length of seq for each batch
+        self.metadata = metadata # An instance of RotatingCacheInputMetadata
 
     def update(self, xk: torch.Tensor, xv: torch.Tensor):
         """
         to_cache_mask masks the last [sliding_window] tokens in each sequence
         """
+        # n_kv_heads: num of attn heads
         n_kv_heads, head_dim = self.cache_k.shape[-2:]
         flat_cache_k = self.cache_k.view(-1, n_kv_heads, head_dim)
         flat_cache_v = self.cache_v.view(-1, n_kv_heads, head_dim)
