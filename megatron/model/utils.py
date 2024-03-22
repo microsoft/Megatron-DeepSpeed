@@ -27,27 +27,6 @@ def scaled_init_method_normal(sigma, num_layers):
 
     return init_
 
-# Implement Sliding Window
-def modify_attention_mask_for_sliding_window(attention_mask, window_size):
-    """
-    Modifies the attention mask for sliding window attention.
-
-    Args:
-        attention_mask (torch.Tensor): Original attention mask of shape [batch_size, seq_len].
-        window_size (int): The size of the sliding window.
-
-    Returns:
-        torch.Tensor: Modified attention mask.
-    """
-    batch_size, seq_len = attention_mask.shape
-    new_mask = torch.full((batch_size, seq_len, seq_len), float('-inf'), device=attention_mask.device)
-
-    for i in range(seq_len):
-        start = max(0, i - window_size // 2)
-        end = min(seq_len, i + window_size // 2 + 1)
-        new_mask[:, i, start:end] = attention_mask[:, start:end]
-
-    return new_mask
 
 
 def gather_and_init(param, init_method):
