@@ -392,10 +392,6 @@ class FlashSelfAttention(torch.nn.Module):
 
         assert all((i.dtype in [torch.float16, torch.bfloat16] for i in (q,k,v)))
         assert all((get_accelerator().on_accelerator(i) for i in (q, k, v)))
-        # if get_accelerator().device_name() == 'cuda':
-        #     assert all((i.is_cuda for i in (q,k,v)))
-        # else:
-        #     assert all((i.is_xpu for i in (q,k,v)))
 
         batch_size, seqlen_q = q.shape[0], q.shape[1]
         seqlen_k = k.shape[1]
@@ -405,9 +401,6 @@ class FlashSelfAttention(torch.nn.Module):
             q, k, v = [rearrange(x, 'b s ... -> (b s) ...') for x in [q, k, v]]
             cu_seqlens_q = torch.arange(0, (batch_size + 1) * seqlen_q, step=seqlen_q, dtype=torch.int32,
                                         device=q.device)
-        else:
-            # goes for other device
-            q, k, v = [rearrange(x, 'b s h d -> b h s d').contiguous() for x in [q, k, v]]
 
         if self.training:
             # during training q,k,v always have same seqlen
@@ -432,8 +425,8 @@ class FlashSelfAttention(torch.nn.Module):
             q, k, v, self.dropout_p, self.softmax_scale, is_causal
         )
 
-        output = rearrange(output, '(b s) ... -> b s ...', b=batch_size) if get_accelerator().device_name() == 'cuda' else rearrange(
-            output, 'b h s d -> b s h d').contiguous()
+        if get_accelerator().device_name() == 'cuda':
+            output = rearrange(output, '(b s) ... -> b s ...', b=batch_size)
         return output
 
 class FlashSelfAttentionTriton(torch.nn.Module):
