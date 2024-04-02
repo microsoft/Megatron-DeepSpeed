@@ -381,8 +381,11 @@ class FlashSelfAttention(torch.nn.Module):
 
         # Use FlashAttention-2 when args.use_flash_attn_v2 is True
         args = get_args()
+        self.use_flash_attn_builder_v1 = False
+        self.use_flash_attn_builder_v2 = False
+        self.use_flash_attn = False
         if args.use_flash_attn_builder:
-            if flash_attn_builder.flash_attn_func:
+            if hasattr(flash_attn_builder, 'flash_attn_func'):
                 self.flash_attn_func = flash_attn_builder.flash_attn_func
                 self.use_flash_attn_builder_v1 = True
             else:
