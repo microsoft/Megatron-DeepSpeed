@@ -4,7 +4,7 @@ set -ex
 
 ######################################
 # Change the below configurations here
-BASE_PATH=./dataset/
+BASE_PATH=dataset
 DS_CONFIG=${BASE_PATH}/deepspeed.json
 #DATASET_1="./tmp/data/bookcorpus_train_1m_text_sentence"
 #DATASET="1 ${DATASET_1}"
@@ -12,7 +12,7 @@ DS_CONFIG=${BASE_PATH}/deepspeed.json
 #DATASET_1="${BASE_PATH}"
 #DATASET="1 ${DATASET_1}"
 
-DATASET=${BASE_DATA}/my-gpt2_text_document
+DATASET=${BASE_PATH}/my-gpt2_text_document
 
 #CHECKPOINT_PATH=./tmp
 TOKENIZER_PATH=${BASE_PATH}/llama-7b/tokenizer.model # offical llama tokenizer.model
@@ -38,7 +38,8 @@ GRAD_CLIP=1
 activation_checkpoint="false"
 
 ZERO_STAGE=1
-DTYPE="fp16"
+#DTYPE="fp16"
+DTYPE="bf16"
 
 # 3D parallelism of training 
 TP=2
@@ -104,21 +105,26 @@ cat <<EOT > $DS_CONFIG
   },
 
   "bf16": {
-    "enabled": false
-  },
-
-  "fp16": {
-    "enabled": true,
-    "loss_scale": 0,
-    "loss_scale_window": 50,
-    "hysteresis": 2,
-    "min_loss_scale": 1,
-    "initial_scale_power": 12
+    "enabled": true
   },
 
   "wall_clock_breakdown" : false
 }
 EOT
+
+
+# "bf16": {
+#   "enabled": false
+# },
+
+# "fp16": {
+#   "enabled": true,
+#   "loss_scale": 0,
+#   "loss_scale_window": 50,
+#   "hysteresis": 2,
+#   "min_loss_scale": 1,
+#   "initial_scale_power": 12
+# },
 
 ds_args=""
 ds_args=" --deepspeed ${ds_args}"
