@@ -2,6 +2,7 @@
 # This example script is contributed by external user https://github.com/LydiaXiaohongLi
 set -ex
 
+DIR=`pwd`
 ######################################
 # Change the below configurations here
 BASE_PATH=dataset
