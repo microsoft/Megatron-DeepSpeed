@@ -1,57 +1,69 @@
-DS_CONFIG=examples_deepspeed/finetune_hf_llama/ds_config.json
-DATASET_PATH=./dataset/alpaca_data.json
-# dataset link: https://github.com/tatsu-lab/stanford_alpaca/blob/main/alpaca_data.json
+#!/bin/bash
+# This example script is contributed by external user https://github.com/LydiaXiaohongLi
+set -ex
 
-HF_LLAMA_PATH=./dataset/llama-7b/
-# weights link: https://huggingface.co/huggyllama/llama-7b
+######################################
+# Change the below configurations here
+BASE_PATH=./dataset/
+DS_CONFIG=${BASE_PATH}/deepspeed.json
+#DATASET_1="./tmp/data/bookcorpus_train_1m_text_sentence"
+#DATASET="1 ${DATASET_1}"
 
-# require to align with weight dimensions
-HIDDEN_SIZE=4096
-FFN_HIDDEN_SIZE=11008
-NUM_LAYERS=32
-NUM_HEADS=32
-SEQ_LENGTH=512
+#DATASET_1="${BASE_PATH}"
+#DATASET="1 ${DATASET_1}"
 
-# TODO (lekurile): Bring over UC args here
-SIZE_TAG="toy"
+DATASET=${BASE_DATA}/my-gpt2_text_document
+
+#CHECKPOINT_PATH=./tmp
+TOKENIZER_PATH=${BASE_PATH}/llama-7b/tokenizer.model # offical llama tokenizer.model
+
+GPUS_PER_NODE=8
+MASTER_ADDR=localhost
+MASTER_PORT=6000
+NNODES=1
+NODE_RANK=0
+
+HIDDEN_SIZE=2048 # e.g. llama-13b: 5120
+FFN_HIDDEN_SIZE=5504 # e.g. llama-13b: 13824
+NUM_LAYERS=24 # e.g. llama-13b: 40
+NUM_HEADS=16 # e.g. llama-13b: 40
+SEQ=2048
+
+LR_WARMUP_STEPS=2000
+WEIGHT_DECAY=0.1
+GRAD_CLIP=1
+
+## Activation checkpointing saves GPU memory, but reduces training speed
+# activation_checkpoint="true"
+activation_checkpoint="false"
+
 ZERO_STAGE=1
 DTYPE="fp16"
 
-## Debug
-#DEBUG_MODE=1
-#if [[ $DEBUG_MODE == 1 ]]; then
-#        LAYERS=4
-#        HIDDEN=512
-#        SEQ=512
-#        EXIT_INTERVAL=200
-#else
-#        HIDDEN=1024
-#        LAYERS=24
-#        SEQ=1024
-#        EXIT_INTERVAL=100
-#        SIZE_TAG="big"
-#fi
-
-
-# 3D parallelism of training
+# 3D parallelism of training 
 TP=2
 PP=2
 DP=2
 SP=1
-#MICRO_BATCH_SIZE=16
-#GLOBAL_BATCH_SIZE=256
 WORLD_SIZE=$((TP*PP*DP*SP))
-GLOBAL_BATCH=256
+#GLOBAL_BATCH_SIZE=32 # e.g. llama: 4M tokens
+GLOBAL_BATCH=32
+#MICRO_BATCH_SIZE=4
 MICRO_BATCH=$((GLOBAL_BATCH/WORLD_SIZE))
-TRAIN_ITERS=3500
-LR=2e-5
+#TRAIN_STEPS=250000 # e.g. llama: 1T tokens / 4M tokens_per_batch = 250000 steps
+TRAIN_ITERS=250000
+LR=3e-4
+MIN_LR=3e-5
 
+# Debug
 DEBUG_MODE=1
 if [[ $DEBUG_MODE == 1 ]]; then
-    EXIT_INTERVAL=200
+        EXIT_INTERVAL=200
+        SIZE_TAG="toy"
 else
-    EXIT_INTERVAL=$TRAIN_ITERS
-fi
+        EXIT_INTERVAL=$TRAIN_ITERS
+        SIZE_TAG="big"
+fi  
 
 # 3D parallelism of checkpoint to load
 LOAD_TP=$TP
@@ -59,8 +71,14 @@ LOAD_PP=$PP
 LOAD_DP=$DP
 LOAD_SP=$SP
 RUN_TAG="save"
+# RUN_TAG="ref_load${LOAD_TP}_${LOAD_PP}_${LOAD_DP}"
 
-######################################
+
+EXP_DIR="z${ZERO_STAGE}_uni_ckpt" 
+CHECKPOINT_PATH=${EXP_DIR}/checkpoints/llama/z${ZERO_STAGE}/$DTYPE/tp${TP}_pp${PP}_dp${DP}_sp${SP}_${SIZE_TAG}
+LOAD_CHECKPOINT_PATH=${EXP_DIR}/checkpoints/llama/z${ZERO_STAGE}/$DTYPE/tp${LOAD_TP}_pp${LOAD_PP}_dp${LOAD_DP}_sp${LOAD_SP}_${SIZE_TAG}
+LOG_DIR="${EXP_DIR}/tensorboard/$DTYPE/tp${TP}_pp${PP}_dp${DP}_sp${SP}_hd${HIDDEN}_nl${LAYERS}_gbsz${GLOBAL_BATCH}_mbsz${MICRO_BATCH}_z${ZERO_STAGE}_LR_${LR}_${MIN_LR}_${DTYPE}_${SIZE_TAG}_${RUN_TAG}"
+mkdir -p $LOG_DIR
 
 # Below configuration required for llama model as per llama paper
 # --no-query-key-layer-scaling \
@@ -72,6 +90,9 @@ RUN_TAG="save"
 # --normalization rmsnorm \
 # --disable-bias-linear \
 ######################################
+
+
+
 cat <<EOT > $DS_CONFIG
 {
   "train_batch_size" : $GLOBAL_BATCH,
@@ -91,104 +112,82 @@ cat <<EOT > $DS_CONFIG
     "loss_scale": 0,
     "loss_scale_window": 50,
     "hysteresis": 2,
-    "min_loss_scale": 0,
+    "min_loss_scale": 1,
     "initial_scale_power": 12
   },
 
   "wall_clock_breakdown" : false
 }
-}
 EOT
 
-#---------------------------------------------
-#   TODO (lekurile): Test code
-#---------------------------------------------
-MEGA_DS_LLAMA_PATH=./"llama_7b_mega_ds_tp${TP}_pp${PP}_dp${DP}_sp${SP}_${size_tag}"
+ds_args=""
+ds_args=" --deepspeed ${ds_args}"
+ds_args=" --deepspeed_config=$DS_CONFIG ${ds_args}"
+ds_args=" --zero-stage=$ZERO_STAGE ${ds_args}"
 
-EXP_DIR="z${ZERO_STAGE}_uni_ckpt"
-CHECKPOINT_PATH=${EXP_DIR}/checkpoints/llama/z${ZERO_STAGE}/$DTYPE/tp${TP}_pp${PP}_dp${DP}_sp${SP}_${SIZE_TAG}
-LOAD_CHECKPOINT_PATH=${EXP_DIR}/checkpoints/llama/z${ZERO_STAGE}/$DTYPE/tp${LOAD_TP}_pp${LOAD_PP}_dp${LOAD_DP}_sp${LOAD_SP}_${SIZE_TAG}
-LOG_DIR="${EXP_DIR}/tensorboard/$DTYPE/tp${TP}_pp${PP}_dp${DP}_sp${SP}_hd${HIDDEN}_nl${LAYERS}_gbsz${GLOBAL_BATCH}_mbsz${MICRO_BATCH}_z${ZERO_STAGE}_LR_${LR}_${DTYPE}_${SIZE_TAG}_${RUN_TAG}"
-mkdir -p $LOG_DIR
+if [ "${activation_checkpoint}" = "true" ]; then
+  ds_args="--deepspeed-activation-checkpointing ${ds_args}"
 
-covert_args="deepspeed tools/hf2megads_weight_converter.py \
---hf-ckpt-num-shards 2 \
---origin-hf-ckpt-dir $HF_LLAMA_PATH \
---save $MEGA_DS_LLAMA_PATH"
+  ## old argument for recomputing the transformer layer
+  # ds_args="--checkpoint-activations ${ds_args}"
 
-finetune_args="deepspeed finetune_llama.py \
---load $MEGA_DS_LLAMA_PATH \
---save $CHECKPOINT_PATH"
-
-comm_args="--tensor-model-parallel-size $TP \
---pipeline-model-parallel-size $PP \
---ds-sequence-parallel-size $SP \
---lr-warmup-iters 2000 \
---weight-decay 0.1 \
---clip-grad 1 \
---num-layers $NUM_LAYERS \
---hidden-size $HIDDEN_SIZE \
---num-attention-heads $NUM_HEADS \
---ffn-hidden-size $FFN_HIDDEN_SIZE \
---attention-dropout 0 \
---hidden-dropout 0 \
---no-query-key-layer-scaling \
---disable-bias-linear \
---normalization rmsnorm \
---use-rotary-position-embeddings \
---untie-embeddings-and-output-weights \
---swiglu \
---seq-length $SEQ_LENGTH \
---max-position-embeddings $SEQ_LENGTH \
---micro-batch-size $MICRO_BATCH \
---global-batch-size $GLOBAL_BATCH \
---train-iters $TRAIN_ITERS \
---lr $LR \
---tensorboard-dir $LOG_DIR \
---lr-decay-iters 320000 \
---lr-decay-style cosine \
---log-interval 1 \
---eval-iters 40 \
---eval-interval 10 \
---data-path $DATASET_PATH \
---save-interval 100 \
---split 100,0,0 \
---${DTYPE} \
---zero-stage=${ZERO_STAGE} \
---tokenizer-type HFTokenizer \
---tokenizer-model $HF_LLAMA_PATH \
---deepspeed_config $DS_CONFIG \
---deepspeed \
---distributed-backend nccl \
---num-workers 0 \
---no-masked-softmax-fusion \
---no-bias-gelu-fusion \
---no-bias-dropout-fusion \
---no-gradient-accumulation-fusion \
---exit-interval ${EXIT_INTERVAL} \
---repeated-dataloader"
-
+  ## new argument for recomputing the transformer layer
+  ds_args="--recompute-granularity full --recompute-method uniform ${ds_args}"
+  ## new argument for recomputing only the attention layer
+  # ds_args="--recompute-granularity selective ${ds_args}"
+fi
 
 if [[ ${ZERO_STAGE} -gt 1 ]]; then
-comm_args="${comm_args} \
+ds_args="${ds_args} \
     --no-pipeline-parallel"
 fi
 
-if [ "$1" = "convert" ]; then
-    task_args="$covert_args"
-else
-    task_args="$finetune_args"
-fi
+DISTRIBUTED_ARGS="--nproc_per_node $GPUS_PER_NODE --nnodes $NNODES --node_rank $NODE_RANK --master_addr $MASTER_ADDR --master_port $MASTER_PORT"
 
-full_cmd="$task_args $comm_args"
-
-#eval "$full_cmd"
-
-#---------------------------------------------
-#   TODO (lekurile): Test code
-#---------------------------------------------
-echo ${comm_args}
-echo ${$full_cmd}
-eval ${$full_cmd}
-
-set +x
+torchrun $DISTRIBUTED_ARGS \
+       pretrain_gpt.py \
+       --tensor-model-parallel-size $TP \
+       --pipeline-model-parallel-size $PP \
+       --ds-sequence-parallel-size $SP \
+       --num-layers $NUM_LAYERS \
+       --hidden-size $HIDDEN_SIZE \
+       --ffn-hidden-size $FFN_HIDDEN_SIZE \
+       --num-attention-heads $NUM_HEADS \
+       --micro-batch-size $MICRO_BATCH \
+       --global-batch-size $GLOBAL_BATCH \
+       --seq-length $SEQ \
+       --max-position-embeddings $SEQ \
+       --train-iters $TRAIN_ITERS \
+       --save ${CHECKPOINT_PATH} \
+       --load ${LOAD_CHECKPOINT_PATH} \
+       --data-path $DATASET \
+       --data-impl mmap \
+       --tokenizer-type GPTSentencePieceTokenizer \
+       --tokenizer-model $TOKENIZER_PATH \
+       --split 949,50,1 \
+       --distributed-backend nccl \
+       --lr $LR \
+       --lr-decay-style cosine \
+       --min-lr $MIN_LR \
+       --weight-decay $WEIGHT_DECAY \
+       --clip-grad $GRAD_CLIP \
+       --lr-warmup-iters $LR_WARMUP_STEPS \
+       --optimizer adam \
+       --adam-beta1 0.9 \
+       --adam-beta2 0.95 \
+       --log-interval 1 \
+       --save-interval 100 \
+       --eval-interval 10 \
+       --eval-iters 40 \
+	   --exit-interval ${EXIT_INTERVAL} \
+       --${DTYPE} \
+       --no-query-key-layer-scaling \
+       --attention-dropout 0 \
+       --hidden-dropout 0 \
+       --use-rotary-position-embeddings \
+       --untie-embeddings-and-output-weights \
+       --swiglu \
+       --normalization rmsnorm \
+       --disable-bias-linear \
+       --tensorboard-dir $LOG_DIR \
+       $ds_args
