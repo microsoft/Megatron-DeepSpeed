@@ -16,6 +16,8 @@ python3 examples_deepspeed/universal_checkpointing/tb_analysis/tb_analysis_scrip
     --tb_event_key "lm-loss-training/lm loss" \
     --plot_name "uc_char_training_loss.png" \
     --plot_title "Megatron-GPT Universal Checkpointing - Training Loss" \
+    --plot_only \
+    --csv_dir "/workspace/uc/megatron/loss_csv" \
 
 # Validation Loss
 python3 examples_deepspeed/universal_checkpointing/tb_analysis/tb_analysis_script.py \
@@ -25,3 +27,5 @@ python3 examples_deepspeed/universal_checkpointing/tb_analysis/tb_analysis_scrip
     --plot_name "uc_char_validation_loss.png" \
     --plot_title "Megatron-GPT Universal Checkpointing - Validation Loss" \
     --plot_y_label "Validation LM Loss" \
+    --plot_only \
+    --csv_dir "/workspace/uc/megatron/val_csv" \

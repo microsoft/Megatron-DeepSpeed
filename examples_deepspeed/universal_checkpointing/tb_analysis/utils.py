@@ -7,7 +7,7 @@ import os
 from uc_analysis import UniversalCheckpointingAnalysis
 
 
-def find_files(directory, file_affix):
+def find_files_affix(directory, file_affix):
     """
     Searches for files with a specific affix in a directory using os.walk().
 
@@ -23,6 +23,24 @@ def find_files(directory, file_affix):
         for filename in files:
             if root not in matching_paths and filename.lower().startswith(file_affix.lower()):
                 matching_paths.append(os.path.join(root))
+    return matching_paths
+
+def find_files_suffix(directory, file_suffix):
+    """
+    Searches for files with a specific suffix in a directory using os.walk().
+
+    Args:
+        directory (str): The path to the directory to search.
+        file_suffix (str): The desired file suffix.
+
+    Returns:
+        list: A list of paths to matching files.
+    """
+    matching_paths = []
+    for root, _, files in os.walk(directory):
+        for filename in files:
+            if root not in matching_paths and filename.lower().endswith(file_suffix.lower()):
+                matching_paths.append(os.path.join(filename))
     return matching_paths
 
 def get_analyzer(analyzer_name):
