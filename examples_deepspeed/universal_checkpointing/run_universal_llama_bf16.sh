@@ -41,10 +41,10 @@ ZERO_STAGE=1
 #DTYPE="fp16"
 DTYPE="bf16"
 
-# 3D parallelism of training 
+# 3D parallelism of training
 TP=2
 PP=2
-DP=2
+DP=1
 SP=1
 WORLD_SIZE=$((TP*PP*DP*SP))
 #GLOBAL_BATCH_SIZE=32 # e.g. llama: 4M tokens
@@ -64,18 +64,17 @@ if [[ $DEBUG_MODE == 1 ]]; then
 else
         EXIT_INTERVAL=$TRAIN_ITERS
         SIZE_TAG="big"
-fi  
+fi
 
 # 3D parallelism of checkpoint to load
-LOAD_TP=$TP
-LOAD_PP=$PP
-LOAD_DP=$DP
-LOAD_SP=$SP
-RUN_TAG="save"
-# RUN_TAG="ref_load${LOAD_TP}_${LOAD_PP}_${LOAD_DP}"
+LOAD_TP=2
+LOAD_PP=2
+LOAD_DP=2
+LOAD_SP=1
+RUN_TAG="uni_load${LOAD_TP}_${LOAD_PP}_${LOAD_DP}_${LOAD_SP}"
 
 
-EXP_DIR="z${ZERO_STAGE}_uni_ckpt" 
+EXP_DIR="z${ZERO_STAGE}_uni_ckpt"
 CHECKPOINT_PATH=${EXP_DIR}/checkpoints/llama/z${ZERO_STAGE}/$DTYPE/tp${TP}_pp${PP}_dp${DP}_sp${SP}_${SIZE_TAG}
 LOAD_CHECKPOINT_PATH=${EXP_DIR}/checkpoints/llama/z${ZERO_STAGE}/$DTYPE/tp${LOAD_TP}_pp${LOAD_PP}_dp${LOAD_DP}_sp${LOAD_SP}_${SIZE_TAG}
 LOG_DIR="${EXP_DIR}/tensorboard/llama/$DTYPE/tp${TP}_pp${PP}_dp${DP}_sp${SP}_hd${HIDDEN}_nl${LAYERS}_gbsz${GLOBAL_BATCH}_mbsz${MICRO_BATCH}_z${ZERO_STAGE}_LR_${LR}_${MIN_LR}_${DTYPE}_${SIZE_TAG}_${RUN_TAG}"
@@ -196,4 +195,5 @@ torchrun $DISTRIBUTED_ARGS \
        --normalization rmsnorm \
        --disable-bias-linear \
        --tensorboard-dir $LOG_DIR \
+       --universal-checkpoint \
        $ds_args
