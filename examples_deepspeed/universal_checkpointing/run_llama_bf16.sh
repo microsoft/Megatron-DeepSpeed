@@ -148,10 +148,7 @@ ds_args="${ds_args} \
     --no-pipeline-parallel"
 fi
 
-DISTRIBUTED_ARGS="--nproc_per_node $GPUS_PER_NODE --nnodes $NNODES --node_rank $NODE_RANK --master_addr $MASTER_ADDR --master_port $MASTER_PORT"
-
-torchrun $DISTRIBUTED_ARGS \
-       pretrain_gpt.py \
+options=" \
        --tensor-model-parallel-size $TP \
        --pipeline-model-parallel-size $PP \
        --ds-sequence-parallel-size $SP \
@@ -197,3 +194,61 @@ torchrun $DISTRIBUTED_ARGS \
        --disable-bias-linear \
        --tensorboard-dir $LOG_DIR \
        $ds_args
+"
+
+WORKER_STR="--num_nodes 1 --num_gpus $WORLD_SIZE"
+run_cmd="deepspeed --master_port 29700 $WORKER_STR ${DIR}/pretrain_gpt.py $@ ${options}"
+
+echo ${options}
+echo ${run_cmd}
+eval ${run_cmd}
+
+#DISTRIBUTED_ARGS="--nproc_per_node $GPUS_PER_NODE --nnodes $NNODES --node_rank $NODE_RANK --master_addr $MASTER_ADDR --master_port $MASTER_PORT"
+
+#torchrun $DISTRIBUTED_ARGS \
+#       pretrain_gpt.py \
+#       --tensor-model-parallel-size $TP \
+#       --pipeline-model-parallel-size $PP \
+#       --ds-sequence-parallel-size $SP \
+#       --num-layers $NUM_LAYERS \
+#       --hidden-size $HIDDEN_SIZE \
+#       --ffn-hidden-size $FFN_HIDDEN_SIZE \
+#       --num-attention-heads $NUM_HEADS \
+#       --micro-batch-size $MICRO_BATCH \
+#       --global-batch-size $GLOBAL_BATCH \
+#       --seq-length $SEQ \
+#       --max-position-embeddings $SEQ \
+#       --train-iters $TRAIN_ITERS \
+#       --save ${CHECKPOINT_PATH} \
+#       --load ${LOAD_CHECKPOINT_PATH} \
+#       --data-path $DATASET \
+#       --data-impl mmap \
+#       --tokenizer-type GPTSentencePieceTokenizer \
+#       --tokenizer-model $TOKENIZER_PATH \
+#       --split 949,50,1 \
+#       --distributed-backend nccl \
+#       --lr $LR \
+#       --lr-decay-style cosine \
+#       --min-lr $MIN_LR \
+#       --weight-decay $WEIGHT_DECAY \
+#       --clip-grad $GRAD_CLIP \
+#       --lr-warmup-iters $LR_WARMUP_STEPS \
+#       --optimizer adam \
+#       --adam-beta1 0.9 \
+#       --adam-beta2 0.95 \
+#       --log-interval 1 \
+#       --save-interval 100 \
+#       --eval-interval 10 \
+#       --eval-iters 40 \
+#	   --exit-interval ${EXIT_INTERVAL} \
+#       --${DTYPE} \
+#       --no-query-key-layer-scaling \
+#       --attention-dropout 0 \
+#       --hidden-dropout 0 \
+#       --use-rotary-position-embeddings \
+#       --untie-embeddings-and-output-weights \
+#       --swiglu \
+#       --normalization rmsnorm \
+#       --disable-bias-linear \
+#       --tensorboard-dir $LOG_DIR \
+#       $ds_args
