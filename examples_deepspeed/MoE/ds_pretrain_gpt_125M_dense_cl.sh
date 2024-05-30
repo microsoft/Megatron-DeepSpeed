@@ -94,7 +94,7 @@ TRAIN_TOKENS=300000000000
 ## above, and techniques like curriculum learning has less token in some samples,
 ## so we just set this config large enough to make sure we have enough
 ## processed data and don't terminate by TRAIN_SAMPLES.
-TRAIN_SAMPLES=$(( ${TRAIN_TOKENS} * 3 / ${SEQ_LEN} ))
+TRAIN_ITERS=$(( ${TRAIN_TOKENS} * 3 / ${GLOBAL_BATCH_SIZE} / ${SEQ_LEN} ))
 
 ## Another termination condition in minutes. Set it large enough to avoid
 ## undesired early termination.
@@ -206,7 +206,7 @@ megatron_options=" \
         --seq-length ${SEQ_LEN} \
         --max-position-embeddings ${SEQ_LEN} \
         --train-tokens ${TRAIN_TOKENS} \
-        --train-samples ${TRAIN_SAMPLES} \
+        --train-iters ${TRAIN_ITERS} \
         --lr ${LR} \
         --min-lr ${MIN_LR} \
         --lr-decay-style cosine \
