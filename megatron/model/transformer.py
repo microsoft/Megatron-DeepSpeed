@@ -401,10 +401,6 @@ class FlashSelfAttention(torch.nn.Module):
         ---------
             q, k, v: The tensor containing the query, key, and value. (B, S, H, D)
         """
-        # dump q, k, v tensor after by heads
-        heads_per_gpus = q.shape[2]
-        for hid in range(heads_per_gpus):
-            print(f"heads_{hid+mpu.get_sequence_parallel_rank()*heads_per_gpus} : {q[:,:,hid,:],k[:,:,hid,:],v[:,:,hid,:]}")
 
         assert all((i.dtype in [torch.float16, torch.bfloat16] for i in (q,k,v)))
         assert all((get_accelerator().on_accelerator(i) for i in (q, k, v)))
