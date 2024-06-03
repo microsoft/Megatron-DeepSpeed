@@ -15,8 +15,8 @@ from megatron import get_adlr_autoresume
 from megatron import get_args
 from megatron import get_tensorboard_writer
 from megatron.core import mpu, tensor_parallel
-from megatron.core.pipeline_parallel.deepspeed_engine import _exec_backward_only_pass, _exec_weight_pass
-from megatron.core.pipeline_parallel.deepspeed_schedule import BackwardOnlyPass, WeightPass, ZeroBubble1POptimized
+from megatron.core.pipeline_parallel.deepspeed_zbh1_engine import _exec_backward_only_pass, _exec_weight_pass
+from megatron.core.pipeline_parallel.deepspeed_zbh1_schedule import BackwardOnlyPass, WeightPass, ZeroBubbleH1Pipeline
 from megatron.arguments import (parse_args, validate_args)
 from megatron.checkpointing import load_args_from_checkpoint
 from megatron.global_vars import set_global_variables
@@ -218,8 +218,8 @@ def _initialize_distributed():
 
             get_accelerator().set_device(device) # only do so when device_count > 0
 
-    if args.zero_bubble_pipeline:
-        deepspeed.runtime.pipe.schedule.TrainSchedule = ZeroBubble1POptimized
+    if args.enable_zbh1_pipeline:
+        deepspeed.runtime.pipe.schedule.TrainSchedule = ZeroBubbleH1Pipeline
         deepspeed.runtime.pipe.engine.PipelineEngine._INSTRUCTION_MAP.update(
             {
                 BackwardOnlyPass: _exec_backward_only_pass,

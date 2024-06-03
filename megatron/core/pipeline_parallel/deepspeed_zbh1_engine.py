@@ -60,7 +60,6 @@ def _exec_backward_only_pass(self, buffer_id):
 
     grad_tensors = self.grad_layer
     if self.is_grad_partitioned:
-        #print(f'RANK={self.global_rank} BEFORE-BWD restoring grad={self.grad_layer[0].size()} {self.grad_layer[1].size()}')
         if self.grad_partition_grad_layer_meta_cache is None:
             self.grad_partition_grad_layer_meta_cache = self.grad_layer[0].to('cpu')
         part_grad = PartitionedTensor.from_meta(meta=self.grad_partition_grad_layer_meta_cache,
@@ -68,7 +67,6 @@ def _exec_backward_only_pass(self, buffer_id):
                                                 group=self.grid.get_slice_parallel_group())
         grad_tensors = (part_grad.full(), *grad_tensors[2:])
         part_grad = None
-        #print(f'RANK={self.global_rank} BEFORE-BWD restored grad={self.grad_layer[0].size()} {self.grad_layer[1].size()}')
 
     if self.using_bf16_optimizer and not self.is_last_stage():
         # manually call because we don't call optimizer.backward()

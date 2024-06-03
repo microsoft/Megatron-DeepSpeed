@@ -2,7 +2,7 @@ from deepspeed.runtime.pipe.schedule import PipeSchedule, PipeInstruction, Buffe
     LoadMicroBatch, RecvActivation, SendActivation, RecvGrad, SendGrad, \
     ForwardPass, BackwardPass, ReduceGrads, ReduceTiedGrads, OptimizerStep
 
-class ZeroBubble1POptimized(PipeSchedule):
+class ZeroBubbleH1Pipeline(PipeSchedule):
     """A schedule for training a batch using hybrid parallelism.
 
     Pipeline parallelism is extracted through gradient accumulation and thus
