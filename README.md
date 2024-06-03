@@ -1,3 +1,8 @@
+##
+This repository contains the zbh1 implementation of the paper [Zero Bubble Pipeline Parallelism](https://arxiv.org/abs/2401.10241) on Megatron-Deepspeed architecture. To integrate it, simply add `--enable-zbh1-pipeline` flag before running. As the implementation is done for DeepSpeed's scheduler, make sure that you are also using DeepSpeed.
+
+The implementation works by modifying the backward function in Megatron and injecting a custom DeepSpeed scheduler. For optimization, when the backward pass is followed by a weight pass, the schedule does not split them. Due to this, the summation of gradients for weights may change and create small numerical differences. It is still possible to split all the time and make the code theoretically numerically accurate by replacing few codes in [the custom schedule](/megatron//core/pipeline_parallel/deepspeed_zbh1_schedule.py), but note that there is a noticable performance drop when using bf16.
+
 ## Latest News
 * [2023/07] Synced with [upstream](https://github.com/NVIDIA/Megatron-LM) over 1k commits, see [rebase folder for more details](https://github.com/microsoft/Megatron-DeepSpeed/tree/main/examples_deepspeed/rebase) in terms of features and updated performance.
 
