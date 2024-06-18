@@ -237,16 +237,20 @@ class SequenceParallelPositionEmbedding(torch.nn.Module):
 class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
     """See linear_with_grad_accumulation_and_async_allreduce"""
 
+    
     @staticmethod
     @custom_fwd
     def forward(ctx, input, weight, bias, gradient_accumulation_fusion,
-                async_grad_allreduce, sequence_parallel):
+                async_grad_allreduce, sequence_parallel, bwd_stream):
         ctx.save_for_backward(input, weight)
         ctx.use_bias = bias is not None
         ctx.gradient_accumulation_fusion = gradient_accumulation_fusion
         ctx.async_grad_allreduce = async_grad_allreduce
         ctx.sequence_parallel = sequence_parallel
-
+        if bwd_stream==None:
+            ctx.bwd_stream=torch.cuda.default_stream()
+        else: 
+            ctx.bwd_stream=bwd_stream
         if sequence_parallel:
             world_size = get_tensor_model_parallel_world_size()
             dim_size = list(input.size())
@@ -359,8 +363,12 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
         #     grad_weight = None
         # else:
         #     grad_weight = grad_output.t().matmul(total_input)
-        grad_weight = grad_output.t().matmul(total_input)
-        grad_bias = grad_output.sum(dim=0) if use_bias else None
+        
+        # to get grad_output
+        ctx.bwd_stream.wait_stream(torch.cuda.current_stream())
+        with torch.cuda.stream(ctx.bwd_stream):
+            grad_weight = grad_output.t().matmul(total_input)
+            grad_bias = grad_output.sum(dim=0) if use_bias else None
 
         if ctx.sequence_parallel:
             handle.wait()
@@ -368,9 +376,9 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
 
         if ctx.async_grad_allreduce:
             handle.wait()
-
-        return grad_input, grad_weight, grad_bias, None, None, None
-
+        # torch.cuda.default_stream().wait_stream(ctx.bwd_stream)
+        return grad_input, grad_weight, grad_bias, None, None, None,None
+from typing import Any
 def linear_with_grad_accumulation_and_async_allreduce(
     input: torch.Tensor,
     weight: torch.Tensor,
@@ -378,6 +386,7 @@ def linear_with_grad_accumulation_and_async_allreduce(
     gradient_accumulation_fusion: bool,
     async_grad_allreduce: bool,
     sequence_parallel: bool,
+    async_sp_all2all_stream:Any=None
 ) -> torch.Tensor:
     """Linear layer execution with asynchronous communication and
     gradient accumulation fusion in backprop.
@@ -438,6 +447,7 @@ def linear_with_grad_accumulation_and_async_allreduce(
         gradient_accumulation_fusion,
         async_grad_allreduce,
         sequence_parallel,
+        async_sp_all2all_stream
     ]
 
     if not linear_with_grad_accumulation_and_async_allreduce.warned:
@@ -494,6 +504,7 @@ class ColumnParallelLinear(torch.nn.Module):
         config: ModelParallelConfig object
 
     """
+    stream=None
 
     def __init__(self, input_size, output_size, *,
                  config: ModelParallelConfig,
@@ -591,7 +602,8 @@ class ColumnParallelLinear(torch.nn.Module):
                 "cannot be enabled at the same time."
             )
 
-
+ 
+    
     def forward(self,
                 input_: torch.Tensor,
                 weight: Optional[torch.Tensor] = None):
@@ -628,6 +640,8 @@ class ColumnParallelLinear(torch.nn.Module):
             input_parallel = input_
         else:
             input_parallel = copy_to_tensor_model_parallel_region(input_)
+            
+        
         # Matrix multiply.
         output_parallel = linear_with_grad_accumulation_and_async_allreduce(
             input=input_parallel,
@@ -635,7 +649,8 @@ class ColumnParallelLinear(torch.nn.Module):
             bias=bias,
             gradient_accumulation_fusion=self.gradient_accumulation_fusion,
             async_grad_allreduce=self.async_tensor_model_parallel_allreduce,
-            sequence_parallel=self.sequence_parallel
+            sequence_parallel=self.sequence_parallel,
+            async_sp_all2all_stream=None
         )
         if self.gather_output and not self.is_expert_without_slicing:
             # All-gather across the partitions.
@@ -690,9 +705,10 @@ class RowParallelLinear(torch.nn.Module):
                  stride: int = 1,
                  keep_master_weight_for_test: bool = False,
                  skip_bias_add: bool = False,
-                 moe=False, enable_expert_tensor_parallelism=False):
+                 moe=False, enable_expert_tensor_parallelism=False,ds_sp_sync_stream=None):
         torch.nn.Module.__init__(self)
-
+        self.ds_sp_sync_stream=ds_sp_sync_stream
+        
         # Keep input parameters
         self.input_size = input_size
         self.output_size = output_size
@@ -768,6 +784,9 @@ class RowParallelLinear(torch.nn.Module):
             assert not self.sequence_parallel
             input_parallel = scatter_to_tensor_model_parallel_region(input_)
         # Matrix multiply.
+        async_sp_all2all_stream=None
+        if self.ds_sp_sync_stream is not None:
+            async_sp_all2all_stream=self.ds_sp_sync_stream 
         output_parallel = linear_with_grad_accumulation_and_async_allreduce(
             input=input_parallel,
             weight=self.weight,
@@ -775,6 +794,7 @@ class RowParallelLinear(torch.nn.Module):
             gradient_accumulation_fusion=self.gradient_accumulation_fusion,
             async_grad_allreduce=False,
             sequence_parallel=False,
+            async_sp_all2all_stream=async_sp_all2all_stream
         )
 
         # All-reduce across all the partitions.

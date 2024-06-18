@@ -496,7 +496,14 @@ class ParallelAttention(MegatronModule):
     Self-attention layer takes input with size [s, b, h]
     and returns output of the same size.
     """
-
+    stream=None
+    @classmethod
+    def get_stream(cls):
+        if cls.stream==None:
+            cls.stream=torch.cuda.Stream()
+            # cls.stream=torch.cuda.current_stream()
+        return cls.stream
+    
     def __init__(self, config, layer_number,
                  attention_type=AttnType.self_attn,
                  attn_mask_type=AttnMaskType.padding):
@@ -598,7 +605,7 @@ class ParallelAttention(MegatronModule):
         if self.enable_ds_sequence_parallel:
             assert dist_attn_supported, 'Distributed attention is not supported in this DeepSpeed version'
             assert args.num_attention_heads % parallel_state.get_sequence_parallel_world_size() == 0
-            self.dist_attn = DistributedAttention(local_attn, parallel_state.get_sequence_parallel_group())
+            self.dist_attn = DistributedAttention(local_attn, parallel_state.get_sequence_parallel_group(),sp_stream=self.get_stream())
         else:
             if self.use_flash_attn:
                 self.core_attention_flash = local_attn
@@ -606,6 +613,7 @@ class ParallelAttention(MegatronModule):
                 self.core_attention = local_attn
                 self.checkpoint_core_attention = config.recompute_granularity == 'selective'
 
+        
         # Output.
         self.dense = tensor_parallel.RowParallelLinear(
             projection_size,
@@ -614,7 +622,9 @@ class ParallelAttention(MegatronModule):
             init_method=config.output_layer_init_method,
             bias=args.add_bias_linear,
             input_is_parallel=True,
-            skip_bias_add=True)
+            skip_bias_add=True,
+            ds_sp_sync_stream=self.get_stream()
+            )
 
 
     def _checkpointed_attention_forward(self, query_layer, key_layer,
