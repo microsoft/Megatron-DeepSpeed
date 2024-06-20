@@ -566,13 +566,37 @@ class ParallelAttention(MegatronModule):
 
         # Strided linear layer.
         if attention_type == AttnType.self_attn:
-            self.query_key_value = tensor_parallel.ColumnParallelLinear(
-                config.hidden_size,
-                projection_size + 2 * kv_projection_size,
-                config=config,
-                init_method=config.init_method,
-                bias=args.add_bias_linear,
-                gather_output=False)
+            if False:
+                self.query_key_value = tensor_parallel.ColumnParallelLinear(
+                    config.hidden_size,
+                    projection_size + 2 * kv_projection_size,
+                    config=config,
+                    init_method=config.init_method,
+                    bias=args.add_bias_linear,
+                    gather_output=False)
+            
+            else:
+                self.query_linear = tensor_parallel.ColumnParallelLinear(
+                    config.hidden_size,
+                    projection_size ,
+                    config=config,
+                    init_method=config.init_method,
+                    bias=args.add_bias_linear,
+                    gather_output=False)
+                self.key_linear = tensor_parallel.ColumnParallelLinear(
+                    config.hidden_size,
+                    kv_projection_size ,
+                    config=config,
+                    init_method=config.init_method,
+                    bias=args.add_bias_linear,
+                    gather_output=False)
+                self.value_linear = tensor_parallel.ColumnParallelLinear(
+                    config.hidden_size,
+                    kv_projection_size ,
+                    config=config,
+                    init_method=config.init_method,
+                    bias=args.add_bias_linear,
+                    gather_output=False)
         else:
             assert attention_type == AttnType.cross_attn
             self.query = tensor_parallel.ColumnParallelLinear(
@@ -605,7 +629,7 @@ class ParallelAttention(MegatronModule):
         if self.enable_ds_sequence_parallel:
             assert dist_attn_supported, 'Distributed attention is not supported in this DeepSpeed version'
             assert args.num_attention_heads % parallel_state.get_sequence_parallel_world_size() == 0
-            self.dist_attn = DistributedAttention(local_attn, parallel_state.get_sequence_parallel_group(),sp_stream=self.get_stream())
+            self.dist_attn = DistributedAttention(local_attn, parallel_state.get_sequence_parallel_group(),sp_stream=self.get_stream(),q_linear=self.query_linear,k_linear=self.key_linear)
         else:
             if self.use_flash_attn:
                 self.core_attention_flash = local_attn
@@ -705,19 +729,29 @@ class ParallelAttention(MegatronModule):
         # =====================
 
         if self.attention_type == AttnType.self_attn:
-            # Attention heads [sq, b, h] --> [sq, b, ((nq + 2 * nkv) * hn)]
-            mixed_x_layer, _ = self.query_key_value(hidden_states)
+            if False:
+                # Attention heads [sq, b, h] --> [sq, b, ((nq + 2 * nkv) * hn)] hidden_states 4096, 1, 2048
+                mixed_x_layer, _ = self.query_key_value(hidden_states) #heads16 hidden 2048   num_per_head 128
+                #[4096, 1,6144]   -> 16,3,128
+                # [sq, b, ((nq + 2 * nkv) * hn)] --> [sq, b, nkv, (nq // nkv + 2), hn]
+                new_tensor_shape = mixed_x_layer.size()[:-1] + \
+                    (-1, (self.num_key_value_groups + 2),
+                    self.hidden_size_per_attention_head)
+                mixed_x_layer = mixed_x_layer.view(*new_tensor_shape)
 
-            # [sq, b, ((nq + 2 * nkv) * hn)] --> [sq, b, nkv, (nq // nkv + 2), hn]
-            new_tensor_shape = mixed_x_layer.size()[:-1] + \
-                (-1, (self.num_key_value_groups + 2),
-                 self.hidden_size_per_attention_head)
-            mixed_x_layer = mixed_x_layer.view(*new_tensor_shape)
+                # [sq, b, nkv, (nq // nkv + 2), hn] --> 3 [sq, b, np, hn]
+                (query_layer, #[4096,1,16,128]
+                key_layer,  #[4096,1,16,128]
+                value_layer) = self.split_tensor(mixed_x_layer)  #[4096,1,16,128]
+            else:
+                query_layer,_ = self.query_linear(hidden_states)
+                query_layer=query_layer.reshape(query_layer.shape[0],query_layer.shape[1],self.num_attention_heads,-1)
 
-            # [sq, b, nkv, (nq // nkv + 2), hn] --> 3 [sq, b, np, hn]
-            (query_layer,
-             key_layer,
-             value_layer) = self.split_tensor(mixed_x_layer)
+                key_layer,_ = self.key_linear(hidden_states)
+                key_layer=key_layer.reshape(key_layer.shape[0],key_layer.shape[1],self.num_attention_heads,-1)
+
+                value_layer,_ = self.value_linear(hidden_states)
+                value_layer=value_layer.reshape(value_layer.shape[0],value_layer.shape[1],self.num_attention_heads,-1)
 
             # Repeat kv
             if self.use_gqa:

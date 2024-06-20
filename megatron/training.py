@@ -1190,8 +1190,8 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         args.random_ltd_layer_num = model[0].random_ltd_scheduler.get_random_ltd_layer_num()
 
     with torch.profiler.profile(
-    schedule=torch.profiler.schedule(skip_first=2, wait=1, warmup=1, active=2, repeat=1),
-    on_trace_ready=torch.profiler.tensorboard_trace_handler('/app/mingzhil/zhejiang/Megatron-DeepSpeed/0617_cuda_log_official_noact_waitstream_on_ds'),
+    schedule=torch.profiler.schedule(skip_first=2000000, wait=1, warmup=1, active=2, repeat=1),
+    on_trace_ready=torch.profiler.tensorboard_trace_handler('/app/mingzhil/zhejiang/Megatron-DeepSpeed/0617_cuda_log_asyncqkv_changetuple_falsebench'),
     record_shapes=True,
     profile_memory=True,
     with_stack=True
