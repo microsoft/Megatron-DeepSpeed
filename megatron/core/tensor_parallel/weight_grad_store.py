@@ -8,7 +8,7 @@ class WeightGradStore:
 
     @classmethod
     def set_combine_bw(cls, combine_bw):
-        # For the following backward pass, combine W with B and skip next W
+        # For the following backward pass, combine W with B and skip next W.
         cls.combine_bw = combine_bw
 
     @classmethod
