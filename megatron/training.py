@@ -753,7 +753,11 @@ def train_step(forward_step_func, data_iterator,
     # Update learning rate.
     if args.deepspeed:
         skipped_iter = 0
-        grad_norm = None
+        # grad_norm = None
+        if hasattr(model[0], 'get_global_grad_norm'):
+            grad_norm = model[0].get_global_grad_norm()
+        else:
+            grad_norm = None
         num_zeros_in_grad = None
         
         loss_reduced = {}
@@ -1190,8 +1194,8 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         args.random_ltd_layer_num = model[0].random_ltd_scheduler.get_random_ltd_layer_num()
 
     with torch.profiler.profile(
-    schedule=torch.profiler.schedule(skip_first=2000000, wait=1, warmup=1, active=2, repeat=1),
-    on_trace_ready=torch.profiler.tensorboard_trace_handler('/app/mingzhil/zhejiang/Megatron-DeepSpeed/0617_cuda_log_asyncqkv_changetuple_falsebench'),
+    schedule=torch.profiler.schedule(skip_first=10000, wait=1, warmup=1, active=2, repeat=1),
+    on_trace_ready=torch.profiler.tensorboard_trace_handler('/app/mingzhil/zhejiang/Megatron-DeepSpeed/0621_cuda_log_fwd_enventq+asyncqkv_changetuple_finalbench_'),
     record_shapes=True,
     profile_memory=True,
     with_stack=True

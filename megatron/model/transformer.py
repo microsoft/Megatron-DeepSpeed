@@ -497,12 +497,18 @@ class ParallelAttention(MegatronModule):
     and returns output of the same size.
     """
     stream=None
+    stream2=None
     @classmethod
     def get_stream(cls):
         if cls.stream==None:
             cls.stream=torch.cuda.Stream()
             # cls.stream=torch.cuda.current_stream()
         return cls.stream
+    def get_stream2(cls):
+        if cls.stream2==None:
+            cls.stream2=torch.cuda.Stream()
+            # cls.stream=torch.cuda.current_stream()
+        return cls.stream2
     
     def __init__(self, config, layer_number,
                  attention_type=AttnType.self_attn,
@@ -744,14 +750,24 @@ class ParallelAttention(MegatronModule):
                 key_layer,  #[4096,1,16,128]
                 value_layer) = self.split_tensor(mixed_x_layer)  #[4096,1,16,128]
             else:
-                query_layer,_ = self.query_linear(hidden_states)
-                query_layer=query_layer.reshape(query_layer.shape[0],query_layer.shape[1],self.num_attention_heads,-1)
-
-                key_layer,_ = self.key_linear(hidden_states)
-                key_layer=key_layer.reshape(key_layer.shape[0],key_layer.shape[1],self.num_attention_heads,-1)
-
-                value_layer,_ = self.value_linear(hidden_states)
-                value_layer=value_layer.reshape(value_layer.shape[0],value_layer.shape[1],self.num_attention_heads,-1)
+                self.get_stream().wait_stream(torch.cuda.current_stream())
+                # with torch.cuda.stream(torch.cuda.current_stream()):
+                with torch.cuda.stream(self.get_stream()):
+                    query_layer,_ = self.query_linear(hidden_states)
+                    query_layer=query_layer.reshape(query_layer.shape[0],query_layer.shape[1],self.num_attention_heads,-1)
+                    fwd_query_layer_done_event = torch.cuda.Event()
+                    fwd_query_layer_done_event.record(self.get_stream())
+                    key_layer,_ = self.key_linear(hidden_states)
+                    key_layer=key_layer.reshape(key_layer.shape[0],key_layer.shape[1],self.num_attention_heads,-1)
+                    
+                    fwd_key_layer_done_event = torch.cuda.Event()
+                    fwd_key_layer_done_event.record(self.get_stream())
+                    # key_layer.done_event=fwd_key_layer_done_event
+                    value_layer,_ = self.value_linear(hidden_states)
+                    value_layer=value_layer.reshape(value_layer.shape[0],value_layer.shape[1],self.num_attention_heads,-1)
+                    # fwd_value_layer_done_event = torch.cuda.Event()
+                    # fwd_value_layer_done_event.record(torch.cuda.current_stream())
+                # torch.cuda.current_stream().wait_stream(self.get_stream())
 
             # Repeat kv
             if self.use_gqa:
@@ -851,7 +867,9 @@ class ParallelAttention(MegatronModule):
                 if not self.use_flash_attn_triton:
                     query_layer, key_layer, value_layer = [rearrange(x, 's b ... -> b s ...').contiguous()
                             for x in (query_layer, key_layer, value_layer)]
-
+                key_layer.done_event=fwd_key_layer_done_event
+                query_layer.done_event=fwd_query_layer_done_event
+                # value_layer.done_event=fwd_value_layer_done_event
                 context_layer = self.dist_attn(query_layer, key_layer, value_layer)
 
                 if not self.use_flash_attn_triton:
