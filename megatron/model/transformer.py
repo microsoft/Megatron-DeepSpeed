@@ -635,7 +635,7 @@ class ParallelAttention(MegatronModule):
         if self.enable_ds_sequence_parallel:
             assert dist_attn_supported, 'Distributed attention is not supported in this DeepSpeed version'
             assert args.num_attention_heads % parallel_state.get_sequence_parallel_world_size() == 0
-            self.dist_attn = DistributedAttention(local_attn, parallel_state.get_sequence_parallel_group(),sp_stream=self.get_stream(),q_linear=self.query_linear,k_linear=self.key_linear)
+            self.dist_attn = DistributedAttention(local_attn, parallel_state.get_sequence_parallel_group(),sp_stream=self.get_stream())
         else:
             if self.use_flash_attn:
                 self.core_attention_flash = local_attn
@@ -751,8 +751,8 @@ class ParallelAttention(MegatronModule):
                 value_layer) = self.split_tensor(mixed_x_layer)  #[4096,1,16,128]
             else:
                 self.get_stream().wait_stream(torch.cuda.current_stream())
-                # with torch.cuda.stream(torch.cuda.current_stream()):
                 with torch.cuda.stream(self.get_stream()):
+                # with torch.cuda.stream(self.get_stream()):
                     query_layer,_ = self.query_linear(hidden_states)
                     query_layer=query_layer.reshape(query_layer.shape[0],query_layer.shape[1],self.num_attention_heads,-1)
                     fwd_query_layer_done_event = torch.cuda.Event()
