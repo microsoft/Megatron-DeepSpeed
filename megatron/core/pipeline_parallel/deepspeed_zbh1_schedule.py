@@ -1,6 +1,7 @@
 from deepspeed.runtime.pipe.schedule import PipeSchedule, PipeInstruction, BufferOpInstruction, \
     LoadMicroBatch, RecvActivation, SendActivation, RecvGrad, SendGrad, \
     ForwardPass, BackwardPass, ReduceGrads, ReduceTiedGrads, OptimizerStep
+from megatron import get_args
 
 class ZeroBubbleH1Pipeline(PipeSchedule):
     """A schedule for training a batch using hybrid parallelism.
@@ -81,8 +82,13 @@ class ZeroBubbleH1Pipeline(PipeSchedule):
                 cmds.append(SendGrad(backward_id))
                 cmds.append(WeightPass())
             else:
-                cmds.append(BackwardPass(backward_id))
-                cmds.append(SendGrad(backward_id))
+                if get_args().enable_zbh1_exact_semantics:
+                    cmds.append(BackwardOnlyPass(backward_id))
+                    cmds.append(SendGrad(backward_id)) 
+                    cmds.append(WeightPass())
+                else:
+                    cmds.append(BackwardPass(backward_id))
+                    cmds.append(SendGrad(backward_id))
             yield cmds
 
         #BW section
