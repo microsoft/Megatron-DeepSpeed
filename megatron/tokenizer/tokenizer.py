@@ -8,6 +8,8 @@ from abc import abstractmethod
 from transformers import AutoTokenizer
 from .bert_tokenization import FullTokenizer as FullBertTokenizer
 from .gpt2_tokenization import GPT2Tokenizer
+
+
 def build_tokenizer(args):
     """Initialize tokenizer."""
     if args.rank == 0:
@@ -35,12 +37,15 @@ def build_tokenizer(args):
     elif args.tokenizer_type == 'GPTSentencePieceTokenizer':
         assert args.tokenizer_model is not None
         tokenizer = _GPTSentencePieceTokenizer(args.tokenizer_model)
+    elif args.tokenizer_type == 'Llama2Tokenizer':
+        assert args.tokenizer_model is not None
+        tokenizer = _Llama2Tokenizer(args.tokenizer_model)
     elif args.tokenizer_type == 'NullTokenizer':
         assert args.vocab_size is not None
         tokenizer = _NullTokenizer(args.vocab_size)
     elif args.tokenizer_type == 'HFTokenizer':
         assert args.tokenizer_model is not None
-        tokenizer = _HFTokenizer(args.tokenizer_model,args.seq_length)
+        tokenizer = _HFTokenizer(args.tokenizer_model)
     else:
         raise NotImplementedError('{} tokenizer is not '
                                   'implemented.'.format(args.tokenizer_type))
@@ -504,6 +509,56 @@ class _GPTSentencePieceTokenizer(_SentencePieceTokenizer):
     def additional_special_tokens_ids(self):
         return None
 
+
+class _Llama2Tokenizer(_SentencePieceTokenizer):
+    """SentencePieceTokenizer-Megatron wrapper"""
+
+    def __init__(self, model_file,):
+        super().__init__(model_file, vocab_extra_ids=0)
+
+    def _initalize(self, vocab_extra_ids):
+        self._populate_vocab()
+
+        # BOS / EOS token IDs
+        self.n_words: int = self.tokenizer.vocab_size()
+        self.bos_id: int = self.tokenizer.bos_id()
+        self.eos_id: int = self.tokenizer.eos_id()
+        self.pad_id: int = self.tokenizer.pad_id()
+        assert self.tokenizer.vocab_size() == self.tokenizer.get_piece_size()
+
+    def tokenize(self, s: str, bos=True, eos=False):
+        '''Default args for text completion, not chat/dialog.'''
+        assert type(s) is str
+        t = self.tokenizer.encode(s)
+        if bos:
+            t = [self.bos_id] + t
+        if eos:
+            t = t + [self.eos_id]
+        return t
+
+    def detokenize(self, ids):
+        return self.tokenizer.decode_ids(ids)
+
+    @property
+    def cls(self):
+        return -1
+
+    @property
+    def sep(self):
+        return -1
+
+    @property
+    def mask(self):
+        return -1
+
+    @property
+    def eod(self):
+        return self.eos_id
+
+    @property
+    def additional_special_tokens_ids(self):
+        return None
+
 class _NullTokenizer:
     def __init__(self, vocab_size):
         vocab_size = int(vocab_size)
@@ -540,28 +595,10 @@ class _NullTokenizer:
 
 class _HFTokenizer(AbstractTokenizer):
     """HF Tokenizer"""
-    def __init__(self, tokenizer_name_or_path,max_seq_len):
+    def __init__(self, tokenizer_name_or_path):
         name = tokenizer_name_or_path
         super().__init__(name)
-        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name_or_path,padding_side="right",use_fast=False)
-        
-        DEFAULT_PAD_TOKEN = "[PAD]"
-        DEFAULT_EOS_TOKEN = "</s>"
-        DEFAULT_BOS_TOKEN = "<s>"
-        DEFAULT_UNK_TOKEN = "<unk>"
-        special_tokens_dict = dict()
-        if self.tokenizer.pad_token is None:
-            special_tokens_dict["pad_token"] = DEFAULT_PAD_TOKEN
-        if self.tokenizer.eos_token is None:
-            special_tokens_dict["eos_token"] = DEFAULT_EOS_TOKEN
-        if self.tokenizer.bos_token is None:
-            special_tokens_dict["bos_token"] = DEFAULT_BOS_TOKEN
-        if self.tokenizer.unk_token is None:
-            special_tokens_dict["unk_token"] = DEFAULT_UNK_TOKEN
-        self.tokenizer.add_special_tokens(special_tokens_dict)
-        # if self.tokenizer.pad_token == None:
-        #     self.tokenizer.pad_token= "[PAD]"
-        self.tokenizer.model_max_length = max_seq_len
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name_or_path)
         self.encoder = self.tokenizer.get_vocab()
         self.decoder = {v: k for k, v in self.encoder.items()}
 

@@ -96,7 +96,7 @@ def set_global_variables(args):
 
     if args.exit_signal_handler:
         _set_signal_handler()
-    
+
 
 def set_args(args):
     global _GLOBAL_ARGS
@@ -137,11 +137,10 @@ def _set_tensorboard_writer(args):
     global _GLOBAL_TENSORBOARD_WRITER
     _ensure_var_is_not_initialized(_GLOBAL_TENSORBOARD_WRITER,
                                    'tensorboard writer')
-
     if hasattr(args, 'tensorboard_dir') and \
        args.tensorboard_dir and args.rank == (args.world_size - 1):
         try:
-            from torch.utils.tensorboard import SummaryWriter
+            from torch.utils.tensorboard.writer import SummaryWriter
             print('> setting tensorboard ...')
             _GLOBAL_TENSORBOARD_WRITER = SummaryWriter(
                 log_dir=args.tensorboard_dir,
@@ -179,9 +178,9 @@ def _set_timers(args):
 
 def _ensure_var_is_initialized(var, name):
     """Make sure the input variable is not None."""
-    assert var is not None, '{} is not initialized.'.format(name)
+    assert var is not None, f'{name} is not initialized.'
 
 
 def _ensure_var_is_not_initialized(var, name):
     """Make sure the input variable is not None."""
-    assert var is None, '{} is already initialized.'.format(name)
+    assert var is None, f'{name} is already initialized.'

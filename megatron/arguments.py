@@ -806,7 +806,7 @@ def _add_training_args(parser):
                        '                      <batch size incerement> '
                        '                      <ramp-up samples> '
                        'For example:'
-                       '   --rampup-batch-size 16 8 300000 \ '
+                       '   --rampup-batch-size 16 8 300000 \\ '
                        '   --global-batch-size 1024'
                        'will start with global batch size 16 and over '
                        ' (1024 - 16) / 8 = 126 intervals will increase'
@@ -925,9 +925,37 @@ def _add_training_args(parser):
     group.add_argument('--disable-bias-linear', action='store_false',
                        help='Disable bias in the linear layers',
                        dest='add_bias_linear')
-    group.add_argument('--optimizer', type=str, default='adam',
-                       choices=['adam', 'sgd'],
-                       help='Optimizer function')
+    group.add_argument(
+        '--optimizer',
+        type=str,
+        default='adam',
+        choices=[
+            'adam',
+            'adamw',
+            'sgd',
+            'ds.fusedlamb',
+            'ipex.lamb',
+            'ipex.fusedlamb',
+            'apex.adam',
+            'apex.sgd',
+            'adamwschedulefree',
+            'sgdschedulefree',
+            'galoreadamw',
+            'adam8bit',
+            'galoreadamw8bit',
+            'galoreadamw8bitperlayer'
+        ],
+        help='Optimizer function'
+    )
+    group.add_argument(
+        "--schedulefree-for-each",
+        action="store_true",
+        help="""
+        Use a foreach-backed implementation of the schedulefree optimizers.
+        Should be significantly faster,
+        but will have a higher peak memory usage.
+        """,
+    )
     group.add_argument('--dataloader-type', type=str, default=None,
                        choices=['single', 'cyclic'],
                        help='Single pass vs multiple pass data loader')
@@ -970,6 +998,12 @@ def _add_training_args(parser):
                        dest='gradient_accumulation_fusion')
     group.add_argument('--use-dataset-only', type=bool, required=False, default=False,
                        help='If set to True, only use the megatron dataset for external trainer ')
+    group.add_argument('--profile', action='store_true', help='Enable Torch Profiler')
+    group.add_argument('--train-iters-to-skip', action="extend", nargs="+", type=str,
+                       help=(
+                           "Specific train iterations to skip when training. "
+                           "Load the data and just perform a noop."
+                       ))
     return parser
 
 
@@ -1223,6 +1257,9 @@ def _add_data_args(parser):
                        'single dataset used for all three: train, valid '
                        'and test. It is exclusive to the other '
                        '--*-data-path args')
+    group.add_argument('--data-file-list', type=str, default=None,
+                       help='The file with the list of dataset and weights')
+    
     group.add_argument('--split', type=str, default='969, 30, 1',
                        help='Comma-separated list of proportions for training,'
                        ' validation, and test split. For example the split '
@@ -1284,7 +1321,8 @@ def _add_data_args(parser):
                                 'SentencePieceTokenizer',
                                 'GPTSentencePieceTokenizer',
                                 'HFTokenizer',
-                                'NullTokenizer'],
+                                'NullTokenizer',
+                                'Llama2Tokenizer'],
                        help='What type of tokenizer to use.')
     group.add_argument('--tokenizer-model', type=str, default=None,
                        help='Sentencepiece tokenizer model.')
@@ -1317,6 +1355,7 @@ def _add_data_args(parser):
                        help='Force to use certain index file.')
     group.add_argument('--repeated-dataloader', action='store_true',
                        help='Once all the data has been loaded, reuse the DataLoader.')
+    group.add_argument('--multiprocessing-context', type=str, default='fork')
     return parser
 
 
@@ -1517,7 +1556,6 @@ def _add_activation_checkpoint_args(parser):
 def _add_distillation_args(parser):
     group = parser.add_argument_group('Knowledge distillation',
                                       'Distillation Configurations')
-    
     group.add_argument('--num-layers-teacher', type=int, default=None,
                        help='Number of the teacher transformer layers.')                  
     group.add_argument('--num-experts-teacher', type=int, nargs='+', default=[1,],
@@ -1526,7 +1564,6 @@ def _add_distillation_args(parser):
                        help='Tansformer teacher hidden size.')
     group.add_argument('--num-attention-heads-teacher', type=int, default=None,
                        help='Number of teacher transformer attention heads.') 
-
     group.add_argument('--mos', action='store_true',
                        help='Enable Mixture-of-Students via knolwedge distillation.')
     group.add_argument('--kd', action='store_true',
@@ -1536,7 +1573,6 @@ def _add_distillation_args(parser):
     group.add_argument('--kd-temp', default=1.0, type=float)
     group.add_argument('--reset-iteration', action='store_true',
                     help='Reset the iteration count.')
-    
     group.add_argument('--load-teacher', type=str, default=None,
                        help='Directory containing a teacher model checkpoint.')
 

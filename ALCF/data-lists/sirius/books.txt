@@ -1,0 +1,3 @@
+0.006 /lus/tegu/projects/PolarisAT/foremans/projects/argonne-lcf/Megatron-DeepSpeed/data/books-0000_text_document
+0.006 /lus/tegu/projects/PolarisAT/foremans/projects/argonne-lcf/Megatron-DeepSpeed/data/books-0001_text_document
+0.006 /lus/tegu/projects/PolarisAT/foremans/projects/argonne-lcf/Megatron-DeepSpeed/data/books-0002_text_document

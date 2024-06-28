@@ -273,7 +273,31 @@ class GPTDataset(torch.utils.data.Dataset):
         args = get_args()
         orig_idx = idx
         # Get the shuffled index.
-        idx = self.shuffle_idx[idx]
+        try:
+            idx = self.shuffle_idx[idx]
+        except IndexError as exc:
+            if is_rank_0():
+                import json
+                from rich import print_json
+                print(exc)
+                print(
+                    '\n'.join(
+                        ['-------------------------------------------------',
+                         f'Trying to access {idx=} from self.shuffle_idx,',
+                         f'but {len(self.shuffle_idx)=}',
+                         '-------------------------------------------------']
+                    )
+                )
+                print_json(
+                    json.dumps(
+                        {
+                            'doc_idx': len(self.doc_idx),
+                            'sample_idx': len(self.sample_idx),
+                            'shuffle_idx': len(self.shuffle_idx),
+                        },
+                        indent=4,
+                    )
+                )
         # Start and end documents and offsets.
         doc_index_f = self.sample_idx[idx][0]
         doc_index_l = self.sample_idx[idx + 1][0]

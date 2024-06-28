@@ -1,12 +1,18 @@
 # Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
 
-from deepspeed.accelerator.real_accelerator import get_accelerator
-if get_accelerator().device_name() == 'cuda':
+# from deepspeed.accelerator.real_accelerator import get_accelerator
+# if get_accelerator().device_name() == 'cuda':
+try:
     from .fused_layer_norm import MixedFusedLayerNorm as LayerNorm
     from apex.normalization import MixedFusedRMSNorm as RMSNorm
-else:
+    HAS_APEX = True
+except Exception:
+    HAS_APEX = False
     from .rmsnorm import RMSNorm
     from torch.nn import LayerNorm
+# else:
+#     from .rmsnorm import RMSNorm
+#     from torch.nn import LayerNorm
 
 from .distributed import DistributedDataParallel
 from .bert_model import BertModel

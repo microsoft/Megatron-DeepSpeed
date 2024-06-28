@@ -14,7 +14,7 @@ from megatron.core.pipeline_parallel import p2p_communication
 from megatron.core.enums import ModelType
 from megatron.core.utils import get_attr_wrapped_model, get_model_type, get_model_config
 
-from megatron.utils import unwrap_model
+from megatron.utils import print_rank_0, unwrap_model
 from megatron.model import DistributedDataParallel as LocalDDP
 from megatron.model import Float16Module
 
@@ -228,7 +228,14 @@ def forward_step(forward_step_func,
     return [output_tensor]
 
 
-def backward_step(input_tensor, output_tensor, output_tensor_grad, model_type, config, model=None):
+def backward_step(
+        input_tensor,
+        output_tensor,
+        output_tensor_grad,
+        model_type,
+        config,
+        model=None
+):
     """Backward step through passed-in output tensor.
 
     If last stage, output_tensor_grad is None, otherwise gradient of loss
@@ -241,12 +248,19 @@ def backward_step(input_tensor, output_tensor, output_tensor_grad, model_type, c
     # needs to be modified slightly to support arbitrary numbers of skip
     # connections.
     args = get_args()
-    if args.deepspeed:
-        assert model is not None
-
+    assert args is not None
     if config.timers is not None:
         config.timers('backward-compute', log_level=2).start()
-
+    if  (to_skip := getattr(args, 'train_iters_to_skip', None)) is not None:
+        if config.timers is not None:
+            config.timers('backward-compute').stop()
+        if len(to_skip) > 0 and args.iteration in [int(i) for i in to_skip]:
+            print_rank_0(
+                f'Caught {args.iteration=} in `iters_to_skip`! Skipping!'
+            )
+            return [None]
+    if args.deepspeed:
+        assert model is not None
     # Retain the grad on the input_tensor.
     unwrap_input_tensor_grad = False
     if not isinstance(input_tensor, list):
@@ -255,24 +269,20 @@ def backward_step(input_tensor, output_tensor, output_tensor_grad, model_type, c
     for x in input_tensor:
         if x is not None:
             x.retain_grad()
-
     if not isinstance(output_tensor, list):
         output_tensor = [output_tensor]
     if not isinstance(output_tensor_grad, list):
         output_tensor_grad = [output_tensor_grad]
-
     # Backward pass.
     if args.deepspeed:
         model.backward(output_tensor[0])
     else:
         if output_tensor_grad[0] is None and config.grad_scale_func is not None:
             output_tensor[0] = config.grad_scale_func(output_tensor[0])
-
         if config.deallocate_pipeline_outputs:
             custom_backward(output_tensor[0], output_tensor_grad[0])
         else:
             torch.autograd.backward(output_tensor[0], grad_tensors=output_tensor_grad[0])
-
     # Collect the grad of the input_tensor.
     input_tensor_grad = [None]
     if input_tensor is not None:
@@ -282,7 +292,6 @@ def backward_step(input_tensor, output_tensor, output_tensor_grad, model_type, c
                 input_tensor_grad.append(None)
             else:
                 input_tensor_grad.append(x.grad)
-
     # Handle single skip connection if it exists (encoder_hidden_state in
     # model with encoder and decoder).
     if parallel_state.get_pipeline_model_parallel_world_size() > 1 and \
@@ -292,10 +301,8 @@ def backward_step(input_tensor, output_tensor, output_tensor_grad, model_type, c
             input_tensor_grad[-1].add_(output_tensor_grad[1])
     if unwrap_input_tensor_grad:
         input_tensor_grad = input_tensor_grad[0]
-
     if config.timers is not None:
         config.timers('backward-compute').stop()
-
     return input_tensor_grad
 
 

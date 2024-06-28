@@ -8,6 +8,12 @@ import sys
 import numpy as np
 from deepspeed.accelerator import get_accelerator
 import torch
+import ezpz as ez
+import logging
+import torch.distributed as tdist
+
+import yaml
+from pathlib import Path
 
 from megatron import update_num_microbatches, get_tokenizer
 from megatron.core import mpu, tensor_parallel
@@ -23,6 +29,12 @@ from deepspeed.checkpoint import (
     UNIVERSAL_CHECKPOINT_VERSION_KEY,
     UNIVERSAL_CHECKPOINT_VERSION_VALUE,
 )
+
+RANK = ez.get_rank()
+WORLD_SIZE = ez.get_world_size()
+DEVICE = ez.get_torch_device()
+log = logging.getLogger(__name__)
+log.setLevel("INFO") if RANK == 0 else log.setLevel("CRITICAL")
 
 _CHECKPOINT_VERSION = None
 
@@ -225,6 +237,10 @@ def get_rng_state():
 def save_checkpoint(iteration, model, optimizer, opt_param_scheduler):
     """Save a model checkpoint."""
     args = get_args()
+    assert args is not None
+    iteration = args.iteration
+
+    save_lr_state_dict()
 
     # Only rank zero of the data parallel writes to the disk.
     if not args.deepspeed:
@@ -529,15 +545,81 @@ def load_args_from_checkpoint(args, load_arg='load'):
     return args, checkpoint_args
 
 
-def load_checkpoint(model, optimizer, opt_param_scheduler, load_arg='load', strict=True, load_only_weights=False):
+def load_lr_state_dict(strict: bool = False) -> dict:
+    """Load {iteration, lr} from .yaml file when restoring from checkpoint."""
+    args = get_args()
+    assert args is not None
+    lr_state_dict_fp = Path(args.load).joinpath(
+        f"lr_state_dict_{RANK}_of_{WORLD_SIZE}.yaml"
+    )
+    lr_state_dict = {}
+    if lr_state_dict_fp.is_file():
+        with lr_state_dict_fp.open('r') as f:
+            lr_state_dict = yaml.safe_load(f)
+        args.lr = lr_state_dict['lr']
+    else:
+        if strict:
+            raise FileNotFoundError(
+                f"{lr_state_dict_fp=}.is_file() is False"
+            )
+        log.info(
+            f"Unable to load lr_state_dict from {lr_state_dict_fp=}, "
+            f"but strict=False. Returning empty dictionary: {lr_state_dict=}"
+        )
+    return lr_state_dict
+
+
+def save_lr_state_dict() -> None:
+    """Save {iteration, lr} to .yaml file for safe-keeping.
+
+    Make sure we're only saving from RANK == 0.
+    """
+    if RANK != 0:
+        return None
+    args = get_args()
+    assert args is not None
+    outdir = getattr(args, 'save', None)
+    assert outdir is not None
+    lr_state_dict_fp = Path(args.save).joinpath(
+        "lr_state_dict.yaml"
+    )
+    log.info(f"Saving lr_state_dict to {lr_state_dict_fp.as_posix()}")
+    with lr_state_dict_fp.open('w') as f:
+        yaml.dump(
+            {'iteration': args.iteration, 'lr': args.lr},
+            f
+        )
+
+
+def load_checkpoint(
+        model,
+        optimizer,
+        opt_param_scheduler,
+        load_arg: str = 'load',
+        strict: bool = True,
+        load_only_weights: bool = False,
+        strict_lr_state_dict: bool = False
+):
     """Load a model checkpoint and return the iteration.
     strict (bool): whether to strictly enforce that the keys in
         :attr:`state_dict` of the checkpoint match the names of
         parameters and buffers in model.
     """
     args = get_args()
+    assert args is not None
     load_dir = getattr(args, load_arg)
-
+    lr_state_dict = {}
+    lr_tensor = torch.tensor(args.lr, requires_grad=False, device=DEVICE)
+    if RANK == 0:
+        lr_state_dict = load_lr_state_dict(strict=strict_lr_state_dict)
+        if len(lr_state_dict.keys()) > 0 and 'lr' in lr_state_dict:
+            lr_tensor = torch.tensor(
+                lr_state_dict['lr'],
+                requires_grad=False,
+                device=DEVICE,
+            )
+    tdist.broadcast(lr_tensor, 0)
+    args.lr = lr_tensor.item()
     if args.deepspeed:
         if args.finetune:
             loaded_dir, state_dict = model[0].load_checkpoint(load_dir,
@@ -553,7 +635,7 @@ def load_checkpoint(model, optimizer, opt_param_scheduler, load_arg='load', stri
             print_rank_0('    will not load any checkpoints and will start from '
                         'random')
             return 0
-        release = False        
+        release = False
     else:
         model = unwrap_model(model)
 
