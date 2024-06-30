@@ -248,7 +248,7 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
         ctx.async_grad_allreduce = async_grad_allreduce
         ctx.sequence_parallel = sequence_parallel
         if bwd_stream==None:
-            ctx.bwd_stream=torch.cuda.default_stream()
+            ctx.bwd_stream=torch.cuda.current_stream()
         else: 
             ctx.bwd_stream=bwd_stream
         if sequence_parallel:
