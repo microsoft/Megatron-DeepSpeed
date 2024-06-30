@@ -496,20 +496,14 @@ class ParallelAttention(MegatronModule):
     Self-attention layer takes input with size [s, b, h]
     and returns output of the same size.
     """
-    stream=None
-    stream2=None
-    @classmethod
-    def get_stream(cls):
-        if cls.stream==None:
-            cls.stream=torch.cuda.Stream()
-            # cls.stream=torch.cuda.current_stream()
-        return cls.stream
-    def get_stream2(cls):
-        if cls.stream2==None:
-            cls.stream2=torch.cuda.Stream()
-            # cls.stream=torch.cuda.current_stream()
-        return cls.stream2
+    sp_stream=None
     
+    def get_sp_stream(self):
+        if not self.ds_sp_overlap:
+            return None
+        if ParallelAttention.sp_stream is None:
+            ParallelAttention.sp_stream=get_accelerator().Stream()
+        return ParallelAttention.sp_stream
     def __init__(self, config, layer_number,
                  attention_type=AttnType.self_attn,
                  attn_mask_type=AttnMaskType.padding):
@@ -523,7 +517,8 @@ class ParallelAttention(MegatronModule):
         self.num_attention_heads = config.num_attention_heads
         self.num_key_value_heads = config.num_key_value_heads
         self.use_gqa = (self.num_attention_heads != self.num_key_value_heads)
-
+        self.split_qkv = args.split_qkv_linear
+        self.ds_sp_overlap = args.ds_sequence_parallel_overlap_comm
         self.use_flash_attn = (args.use_flash_attn_v1 or args.use_flash_attn_triton or args.use_flash_attn_v2 or \
             args.use_flash_attn_builder) \
             and attention_type == AttnType.self_attn \
@@ -572,7 +567,7 @@ class ParallelAttention(MegatronModule):
 
         # Strided linear layer.
         if attention_type == AttnType.self_attn:
-            if False:
+            if not self.split_qkv:
                 self.query_key_value = tensor_parallel.ColumnParallelLinear(
                     config.hidden_size,
                     projection_size + 2 * kv_projection_size,
@@ -582,27 +577,21 @@ class ParallelAttention(MegatronModule):
                     gather_output=False)
             
             else:
-                self.query_linear = tensor_parallel.ColumnParallelLinear(
-                    config.hidden_size,
-                    projection_size ,
-                    config=config,
-                    init_method=config.init_method,
-                    bias=args.add_bias_linear,
-                    gather_output=False)
-                self.key_linear = tensor_parallel.ColumnParallelLinear(
-                    config.hidden_size,
-                    kv_projection_size ,
-                    config=config,
-                    init_method=config.init_method,
-                    bias=args.add_bias_linear,
-                    gather_output=False)
-                self.value_linear = tensor_parallel.ColumnParallelLinear(
-                    config.hidden_size,
-                    kv_projection_size ,
-                    config=config,
-                    init_method=config.init_method,
-                    bias=args.add_bias_linear,
-                    gather_output=False)
+                linear_configs = [
+                    ("query_linear", projection_size),
+                    ("key_linear", kv_projection_size),
+                    ("value_linear", kv_projection_size),
+                ]
+
+                for attr_name, output_size in linear_configs:
+                    setattr(self, attr_name, tensor_parallel.ColumnParallelLinear(
+                        config.hidden_size,
+                        output_size,
+                        config=config,
+                        init_method=config.init_method,
+                        bias=args.add_bias_linear,
+                        gather_output=False
+                    ))
         else:
             assert attention_type == AttnType.cross_attn
             self.query = tensor_parallel.ColumnParallelLinear(
@@ -633,9 +622,10 @@ class ParallelAttention(MegatronModule):
         self.enable_ds_sequence_parallel = parallel_state.get_sequence_parallel_world_size() > 1 \
                                            or args.force_ds_sequence_parallel
         if self.enable_ds_sequence_parallel:
+
             assert dist_attn_supported, 'Distributed attention is not supported in this DeepSpeed version'
             assert args.num_attention_heads % parallel_state.get_sequence_parallel_world_size() == 0
-            self.dist_attn = DistributedAttention(local_attn, parallel_state.get_sequence_parallel_group(),sp_stream=self.get_stream())
+            self.dist_attn = DistributedAttention(local_attn, parallel_state.get_sequence_parallel_group(),sp_stream=self.get_sp_stream())
         else:
             if self.use_flash_attn:
                 self.core_attention_flash = local_attn
@@ -643,7 +633,6 @@ class ParallelAttention(MegatronModule):
                 self.core_attention = local_attn
                 self.checkpoint_core_attention = config.recompute_granularity == 'selective'
 
-        
         # Output.
         self.dense = tensor_parallel.RowParallelLinear(
             projection_size,
@@ -653,7 +642,7 @@ class ParallelAttention(MegatronModule):
             bias=args.add_bias_linear,
             input_is_parallel=True,
             skip_bias_add=True,
-            ds_sp_sync_stream=self.get_stream()
+            ds_sp_async_stream=self.get_sp_stream()
             )
 
 
@@ -735,7 +724,7 @@ class ParallelAttention(MegatronModule):
         # =====================
 
         if self.attention_type == AttnType.self_attn:
-            if False:
+            if not self.split_qkv:
                 # Attention heads [sq, b, h] --> [sq, b, ((nq + 2 * nkv) * hn)] hidden_states 4096, 1, 2048
                 mixed_x_layer, _ = self.query_key_value(hidden_states) #heads16 hidden 2048   num_per_head 128
                 #[4096, 1,6144]   -> 16,3,128
@@ -746,28 +735,28 @@ class ParallelAttention(MegatronModule):
                 mixed_x_layer = mixed_x_layer.view(*new_tensor_shape)
 
                 # [sq, b, nkv, (nq // nkv + 2), hn] --> 3 [sq, b, np, hn]
-                (query_layer, #[4096,1,16,128]
-                key_layer,  #[4096,1,16,128]
-                value_layer) = self.split_tensor(mixed_x_layer)  #[4096,1,16,128]
+                (query_layer,
+                key_layer,
+                value_layer) = self.split_tensor(mixed_x_layer)
             else:
-                self.get_stream().wait_stream(torch.cuda.current_stream())
-                with torch.cuda.stream(self.get_stream()):
-                # with torch.cuda.stream(self.get_stream()):
+                assert self.ds_sp_overlap, """
+                    Currently, the split_qkv operation is only applicable 
+                    when ds_sp_overlap is enabled.
+                """
+                self.get_sp_stream().wait_stream(get_accelerator().current_stream())
+                with get_accelerator().stream(self.get_sp_stream()):
                     query_layer,_ = self.query_linear(hidden_states)
                     query_layer=query_layer.reshape(query_layer.shape[0],query_layer.shape[1],self.num_attention_heads,-1)
-                    fwd_query_layer_done_event = torch.cuda.Event()
-                    fwd_query_layer_done_event.record(self.get_stream())
+                    fwd_query_layer_done_event = get_accelerator().Event()
+                    fwd_query_layer_done_event.record(self.get_sp_stream())
                     key_layer,_ = self.key_linear(hidden_states)
                     key_layer=key_layer.reshape(key_layer.shape[0],key_layer.shape[1],self.num_attention_heads,-1)
                     
-                    fwd_key_layer_done_event = torch.cuda.Event()
-                    fwd_key_layer_done_event.record(self.get_stream())
-                    # key_layer.done_event=fwd_key_layer_done_event
+                    fwd_key_layer_done_event = get_accelerator().Event()
+                    fwd_key_layer_done_event.record(self.get_sp_stream())
                     value_layer,_ = self.value_linear(hidden_states)
                     value_layer=value_layer.reshape(value_layer.shape[0],value_layer.shape[1],self.num_attention_heads,-1)
-                    # fwd_value_layer_done_event = torch.cuda.Event()
-                    # fwd_value_layer_done_event.record(torch.cuda.current_stream())
-                # torch.cuda.current_stream().wait_stream(self.get_stream())
+               
 
             # Repeat kv
             if self.use_gqa:
@@ -867,9 +856,10 @@ class ParallelAttention(MegatronModule):
                 if not self.use_flash_attn_triton:
                     query_layer, key_layer, value_layer = [rearrange(x, 's b ... -> b s ...').contiguous()
                             for x in (query_layer, key_layer, value_layer)]
-                key_layer.done_event=fwd_key_layer_done_event
-                query_layer.done_event=fwd_query_layer_done_event
-                # value_layer.done_event=fwd_value_layer_done_event
+                if self.ds_sp_overlap:
+                    key_layer.done_event=fwd_key_layer_done_event
+                    query_layer.done_event=fwd_query_layer_done_event
+                
                 context_layer = self.dist_attn(query_layer, key_layer, value_layer)
 
                 if not self.use_flash_attn_triton:
