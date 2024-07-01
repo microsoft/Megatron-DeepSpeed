@@ -6,7 +6,7 @@ if get_accelerator().device_name() == 'cuda':
     from apex.normalization import MixedFusedRMSNorm as RMSNorm
 else:
     from .rmsnorm import RMSNorm
-    from torch.nn import LayerNorm
+    from .layer_norm_p1 import LayerNorm1P as LayerNorm
 
 from .distributed import DistributedDataParallel
 from .bert_model import BertModel
