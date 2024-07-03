@@ -44,6 +44,7 @@ def parse_args(extra_args_provider=None, ignore_unknown_args=False):
     parser = _add_inference_args(parser)
     parser = _add_transformer_engine_args(parser)
     parser = _add_retro_args(parser)
+    parser = _add_profiler_args(parser)
 
     # Custom arguments.
     if extra_args_provider is not None:
@@ -1539,5 +1540,22 @@ def _add_distillation_args(parser):
     
     group.add_argument('--load-teacher', type=str, default=None,
                        help='Directory containing a teacher model checkpoint.')
+
+    return parser
+
+
+def _add_profiler_args(parser):
+    group = parser.add_argument_group(title='profiling configuration')
+
+    group.add_argument("--profile",
+     type=str,
+     default=None,
+     choices=['pt', 'pt-full'],
+     help="Enable profiling")
+
+    group.add_argument("--profile_steps",
+     type=str,
+     default='2,3',
+     help="Which steps to profile. Format: <start step>,<end step>")
 
     return parser
