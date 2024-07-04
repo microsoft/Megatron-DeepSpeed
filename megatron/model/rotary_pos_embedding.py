@@ -1,3 +1,4 @@
+# Copyright (C) 2024 Habana Labs, Ltd. an Intel Company.
 # coding=utf-8
 
 # The following code has been taken from https://github.com/NVIDIA/NeMo/blob/ \
