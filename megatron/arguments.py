@@ -73,6 +73,12 @@ def validate_args(args, defaults={}):
     assert args.world_size % args.tensor_model_parallel_size == 0, 'world size'\
         ' ({}) is not divisible by tensor model parallel size ({})'.format(
             args.world_size, args.tensor_model_parallel_size)
+    # Zero bubble pipeline is defined on deepspeed's scheduler
+    if args.enable_zbh1_pipeline:
+        assert args.deepspeed, 'Use DeepSpeed to use zero-bubble H1 pipeline'
+        assert args.sequence_parallel == False, "Sequence Parallel not tested, proceed at own will by removing this line"
+    if args.enable_zbh1_exact_semantics:
+        assert args.enable_zbh1_pipeline, 'Exact semantics require ZBH1 pipeline enabled'
     # Pipeline model parallel size.
     args.pipeline_model_parallel_size = min(
         args.pipeline_model_parallel_size,
@@ -95,8 +101,8 @@ def validate_args(args, defaults={}):
                           args.ds_sequence_parallel_size
     assert args.world_size % model_parallel_size == 0, 'world size ({}) is not'\
         ' divisible by tensor parallel size ({}) times pipeline parallel ' \
-        'size ({})'.format(args.world_size, args.tensor_model_parallel_size,
-                           args.pipeline_model_parallel_size)
+        'size ({}) times seqence parallel size ({})'.format(args.world_size, args.tensor_model_parallel_size,
+                           args.pipeline_model_parallel_size, args.ds_sequence_parallel_size)
     args.data_parallel_size = args.world_size // model_parallel_size
     if args.rank == 0:
         print('using world size: {}, data-parallel-size: {}, '
@@ -421,7 +427,7 @@ def validate_args(args, defaults={}):
     args.compression_training = False
 
     # FlashAttention
-    args.use_flash_attn = args.use_flash_attn_v1 or args.use_flash_attn_triton or args.use_flash_attn_v2
+    args.use_flash_attn = args.use_flash_attn_v1 or args.use_flash_attn_triton or args.use_flash_attn_v2 or args.use_flash_attn_builder
 
     # AML
     if args.aml_data_download_path is not None:
@@ -835,6 +841,10 @@ def _add_training_args(parser):
                        'uniformly divided recompute unit, '
                        '2) block: the number of individual Transformer layers '
                        'to recompute within each pipeline stage.')
+    group.add_argument('--enable-zbh1-pipeline', action='store_true',
+                       help='Activate zero bubble pipeline parallelism schedule method')
+    group.add_argument('--enable-zbh1-exact-semantics', action='store_true',
+                       help='Use an exact semantics for zbh1 schedule, might be slower than the default.')
 
     # deprecated
     # HACK: added back arguments because DeepSpeed still relies on the old
@@ -910,6 +920,8 @@ def _add_training_args(parser):
                        'https://arxiv.org/abs/2307.08691')
     group.add_argument('--use-flash-attn-triton', action='store_true',
                        help='use FlashAttention implementation of attention using Triton.')
+    group.add_argument('--use-flash-attn-builder', action='store_true',
+                       help='use FlashAttention op builder.')
     group.add_argument('--disable-bias-linear', action='store_false',
                        help='Disable bias in the linear layers',
                        dest='add_bias_linear')
@@ -1136,7 +1148,7 @@ def _add_distributed_args(parser):
                        help='overlap pipeline parallel communication with forward and backward chunks',
                        dest='overlap_p2p_comm')
     group.add_argument('--distributed-backend', default='nccl',
-                       choices=['nccl', 'gloo', 'ccl'],
+                       choices=['nccl', 'gloo', 'ccl', 'hccl'],
                        help='Which backend to use for distributed training.')
     group.add_argument('--distributed-timeout-minutes', type=int, default=10,
                        help='Timeout minutes for torch.distributed.')
