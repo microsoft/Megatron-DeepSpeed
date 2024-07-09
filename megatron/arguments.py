@@ -746,6 +746,10 @@ def _add_logging_args(parser):
     group.add_argument('--log-world-size-to-tensorboard',
                        action='store_true',
                        help='Enable world size logging to tensorboard.')
+    group.add_argument('--wandb-project', type=str, default='',
+                       help='The wandb project name. Ignore wandb by default.')
+    group.add_argument('--wandb-exp-name', type=str, default='',
+                       help='The wandb experiment name.')
 
     return parser
 
