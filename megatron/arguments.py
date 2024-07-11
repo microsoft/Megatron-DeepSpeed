@@ -1552,7 +1552,7 @@ def _add_profiler_args(parser):
      type=str,
      default=None,
      choices=['pt', 'pt-full'],
-     help="Enable profiling")
+     help="Enable profiling, pt-full gives call stack compared to pt")
 
     group.add_argument("--profile_steps",
      type=str,
