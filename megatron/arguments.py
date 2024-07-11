@@ -680,8 +680,8 @@ def _add_network_size_args(parser):
     group.add_argument('--embedding-weights-in-fp32', action='store_true',
                        help='Cast word embedding weights to fp32 before embedding fwd.'),
     group.add_argument('--kill-switch-path', type=str, default=None,
-                       help='Path to look for a kill switch. '
-                            'If found will automatically exit the program.')
+                       help='Path to look for a kill switch file. '
+                            'If found will automatically exit the program at runtime.')
     return parser
 
 
