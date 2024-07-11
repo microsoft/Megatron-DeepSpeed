@@ -184,9 +184,13 @@ def _set_wandb_writer(args):
                   'no WANDB logs will be written.', flush=True)
             return
 
-        # Update the wandb save_dir
+        if args.wandb_save_dir:
+            save_dir = args.wandb_save_dir
+        else:
+            # Defaults to the save dir.
+            save_dir = os.path.join(args.save, 'wandb')
         wandb_kwargs = {
-            'dir': os.path.join(args.save, 'wandb'),
+            'dir': save_dir,
             'name': args.wandb_exp_name,
             'project': args.wandb_project,
             'config': vars(args)}

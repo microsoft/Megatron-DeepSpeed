@@ -47,7 +47,9 @@ if [ $LOG_TO_WANDB -eq 1 ]
 then
 WANDB_ARGS="\
        --wandb-project pretrain-llama2 \
-       --wandb-exp-name exp0"
+       --wandb-exp-name exp0 \
+       --wandb-save-dir ${BASE_PATH}/wandb \
+       "
 fi
 
 # Below configuration required for llama model as per llama paper
