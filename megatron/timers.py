@@ -306,4 +306,4 @@ class Timers:
         if writer.is_enabled():
             for name in name_to_min_max_time:
                 _, max_time = name_to_min_max_time[name]
-                writer.add_scalar_to_tb(name + '-time', max_time, iteration)
+                writer.add_scalar(name + '-time', max_time, iteration)

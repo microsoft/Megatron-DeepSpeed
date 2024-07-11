@@ -165,12 +165,16 @@ def _set_wandb_writer(args):
     global _GLOBAL_WANDB_WRITER
     _ensure_var_is_not_initialized(_GLOBAL_WANDB_WRITER,
                                    'wandb writer')
-    if getattr(args, 'wandb_project', '') and \
-        args.rank == (args.world_size - 1):
-        if args.wandb_exp_name == '':
+    getattr(args, 'wandb_project', '')
+    getattr(args, 'wandb_exp_name', '')
+
+    if args.rank == (args.world_size - 1):
+        if args.wandb_project == '' or \
+            args.wandb_exp_name == '':
             print('WARNING: WANDB writing requested but no legit wandb '
-                  'experiment name is provided, '
-                  'no WANDB logs will be written.', flush=True)
+                  'project or experiment name provided, '
+                  'therefore WANDB logs will be written '
+                  'according to random generated project or experiment name.', flush=True)
 
         try:
             import wandb
@@ -178,6 +182,7 @@ def _set_wandb_writer(args):
             print('WARNING: WANDB writing requested but is not '
                   'available (try to pip install wandb to solve it), '
                   'no WANDB logs will be written.', flush=True)
+            return
 
         # Update the wandb save_dir
         wandb_kwargs = {
