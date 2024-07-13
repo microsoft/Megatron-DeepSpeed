@@ -1,0 +1,13 @@
+0.001451215788905126 /gila/Aurora_deployment/AuroraGPT/datasets/dolma/data_v1.7_Llama2Tokenizer/open-web-math-train-0000_text_document
+0.0014486847196258788 /gila/Aurora_deployment/AuroraGPT/datasets/dolma/data_v1.7_Llama2Tokenizer/open-web-math-train-0001_text_document
+0.0008861032722895899 /gila/Aurora_deployment/AuroraGPT/datasets/dolma/data_v1.7_Llama2Tokenizer/open-web-math-train-0002_text_document
+0.0018119590809459816 /gila/Aurora_deployment/AuroraGPT/datasets/dolma/data_v1.7_Llama2Tokenizer/open-web-math-train-0003_text_document
+0.0008916937917547129 /gila/Aurora_deployment/AuroraGPT/datasets/dolma/data_v1.7_Llama2Tokenizer/open-web-math-train-0004_text_document
+6.960128832809415e-05 /gila/Aurora_deployment/AuroraGPT/datasets/dolma/data_v1.7_Llama2Tokenizer/open-web-math-train-0005_text_document
+0.002008403651063623 /gila/Aurora_deployment/AuroraGPT/datasets/dolma/data_v1.7_Llama2Tokenizer/open-web-math-train-0006_text_document
+0.0014374900742131454 /gila/Aurora_deployment/AuroraGPT/datasets/dolma/data_v1.7_Llama2Tokenizer/open-web-math-train-0007_text_document
+0.00180213596996716 /gila/Aurora_deployment/AuroraGPT/datasets/dolma/data_v1.7_Llama2Tokenizer/open-web-math-train-0008_text_document
+0.001956178877532413 /gila/Aurora_deployment/AuroraGPT/datasets/dolma/data_v1.7_Llama2Tokenizer/open-web-math-train-0009_text_document
+0.0008829547017667033 /gila/Aurora_deployment/AuroraGPT/datasets/dolma/data_v1.7_Llama2Tokenizer/open-web-math-train-0010_text_document
+0.0008910853619157279 /gila/Aurora_deployment/AuroraGPT/datasets/dolma/data_v1.7_Llama2Tokenizer/open-web-math-train-0011_text_document
+0.0018260998845299973 /gila/Aurora_deployment/AuroraGPT/datasets/dolma/data_v1.7_Llama2Tokenizer/open-web-math-train-0012_text_document

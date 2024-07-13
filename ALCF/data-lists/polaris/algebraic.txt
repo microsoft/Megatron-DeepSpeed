@@ -1,0 +1,16 @@
+0.0018520780893211373 /eagle/datasets/dolma/data_v1.7_Llama2Tokenizer/algebraic-stack-train-0000_text_document
+0.0017591050606817512 /eagle/datasets/dolma/data_v1.7_Llama2Tokenizer/algebraic-stack-train-0001_text_document
+0.001459052794333798 /eagle/datasets/dolma/data_v1.7_Llama2Tokenizer/algebraic-stack-train-0002_text_document
+0.0007405667281569194 /eagle/datasets/dolma/data_v1.7_Llama2Tokenizer/algebraic-stack-train-0003_text_document
+0.00019420030110896795 /eagle/datasets/dolma/data_v1.7_Llama2Tokenizer/algebraic-stack-train-0004_text_document
+0.0009008668715801845 /eagle/datasets/dolma/data_v1.7_Llama2Tokenizer/algebraic-stack-train-0005_text_document
+0.00015115827957143057 /eagle/datasets/dolma/data_v1.7_Llama2Tokenizer/algebraic-stack-train-0006_text_document
+0.0014552844319220648 /eagle/datasets/dolma/data_v1.7_Llama2Tokenizer/algebraic-stack-train-0007_text_document
+0.0012469861325685161 /eagle/datasets/dolma/data_v1.7_Llama2Tokenizer/algebraic-stack-train-0008_text_document
+0.00136412011372413 /eagle/datasets/dolma/data_v1.7_Llama2Tokenizer/algebraic-stack-train-0009_text_document
+0.0007064279699221103 /eagle/datasets/dolma/data_v1.7_Llama2Tokenizer/algebraic-stack-train-0010_text_document
+0.0008472240000687427 /eagle/datasets/dolma/data_v1.7_Llama2Tokenizer/algebraic-stack-train-0011_text_document
+0.0001984375713341955 /eagle/datasets/dolma/data_v1.7_Llama2Tokenizer/algebraic-stack-train-0012_text_document
+0.0005472773881697123 /eagle/datasets/dolma/data_v1.7_Llama2Tokenizer/algebraic-stack-train-0013_text_document
+0.001815779629850992 /eagle/datasets/dolma/data_v1.7_Llama2Tokenizer/algebraic-stack-train-0014_text_document
+0.0018313600689757324 /eagle/datasets/dolma/data_v1.7_Llama2Tokenizer/algebraic-stack-train-0015_text_document

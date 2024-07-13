@@ -389,10 +389,16 @@ class TransformerLanguageModel(MegatronModule):
                  post_process=True,
                  num_experts=[1]):
         args = get_args()
-        # TODO: passing share_embeddings_and_output_weights=False will not work correctly for T5 and embeddings will not be synced. Fix later for T5.
-        if args.untie_embeddings_and_output_weights: assert not add_decoder
-        super(TransformerLanguageModel, self).__init__(share_embeddings_and_output_weights=not args.untie_embeddings_and_output_weights)
-
+        # TODO: passing `share_embeddings_and_output_weights=False`
+        # will not work correctly for T5 and embeddings will not be synced.
+        # Fix later for T5.
+        if args.untie_embeddings_and_output_weights:
+            assert not add_decoder
+        super(TransformerLanguageModel, self).__init__(
+            share_embeddings_and_output_weights=(
+                        not args.untie_embeddings_and_output_weights
+                    )
+        )
         self.pre_process = pre_process
         self.post_process = post_process
         self.hidden_size = config.hidden_size
@@ -405,27 +411,35 @@ class TransformerLanguageModel(MegatronModule):
         self.add_pooler = add_pooler
         self.encoder_hidden_state = None
         self.add_retriever = args.retro_add_retriever
-        self.untie_embeddings_and_output_weights = args.untie_embeddings_and_output_weights
+        self.untie_embeddings_and_output_weights = (
+            args.untie_embeddings_and_output_weights
+        )
         self.num_experts = num_experts
 
         # Embeddings.
         if self.pre_process:
-            self.embedding = Embedding(self.hidden_size,
-                                       args.padded_vocab_size,
-                                       args.max_position_embeddings,
-                                       args.hidden_dropout,
-                                       config,
-                                       self.num_tokentypes,
-                                       args.embedding_weights_in_fp32)
+            self.embedding = Embedding(
+                self.hidden_size,
+                args.padded_vocab_size,
+                args.max_position_embeddings,
+                args.hidden_dropout,
+                config,
+                self.num_tokentypes,
+                args.embedding_weights_in_fp32
+            )
             self._embedding_key = 'embedding'
 
         # Rotary positional embeddings
-        self.use_rotary_position_embeddings = \
-            args.use_rotary_position_embeddings
+        self.use_rotary_position_embeddings = (
+                args.use_rotary_position_embeddings
+        )
         if args.use_rotary_position_embeddings:
             self.seq_length = args.seq_length
-            rotary_dim = args.hidden_size // args.num_attention_heads \
-                if args.kv_channels is None else args.kv_channels
+            rotary_dim = (
+                    args.hidden_size // args.num_attention_heads
+                    if args.kv_channels is None
+                    else args.kv_channels
+            )
 
             if args.rotary_percent < 1.0:
                 rotary_dim = int(rotary_dim * args.rotary_percent)
@@ -433,15 +447,22 @@ class TransformerLanguageModel(MegatronModule):
             # partial rotary embeddings, which is better than full rotary
             # Wang and Komatsuzaki et al
             # https://github.com/kingoflolz/mesh-transformer-jax/
-            self.rotary_pos_emb = RotaryEmbedding(rotary_dim, theta=args.rope_theta)
+            self.rotary_pos_emb = RotaryEmbedding(
+                rotary_dim,
+                theta=args.rope_theta
+            )
 
         # Encoder (usually set to True, False if part of an encoder-decoder
         # architecture and in encoder-only stage).
         if self.add_encoder:
             self.encoder = ParallelTransformer(
                 config,
-                model_type=args.model_type if not args.retro_add_retriever \
-                    else ModelType.retro_decoder,
+                # args.model_type if not args.retro_add_retriever
+                # else ModelType.retro_decoder
+                model_type=(
+                    ModelType.retro_decoder if args.retro_add_retriever
+                    else args.model_type
+                ),
                 self_attn_mask_type=self.encoder_attn_mask_type,
                 pre_process=self.pre_process,
                 post_process=self.post_process,
@@ -461,7 +482,8 @@ class TransformerLanguageModel(MegatronModule):
                 self_attn_mask_type=self.decoder_attn_mask_type,
                 pre_process=self.pre_process,
                 post_process=self.post_process,
-                num_experts=self.num_experts)
+                num_experts=self.num_experts
+            )
             self._decoder_key = 'decoder'
         else:
             self.decoder = None
@@ -478,24 +500,30 @@ class TransformerLanguageModel(MegatronModule):
                     args.padded_vocab_size,
                     config=config,
                     init_method=self.init_method,
-                    bias=False) # Setting bias to False always to keep it consistent with embedding tying that also does not have a bias.
+                    # Setting bias to False always to keep it consistent with
+                    # embedding tying that also does not have a bias.
+                    bias=False
+                )
                 self._output_layer_key = 'output_layer'
 
     def set_input_tensor(self, input_tensor):
         """ See megatron.model.transformer.set_input_tensor()"""
-
         # This is usually handled in schedules.py but some inference code still
         # gives us non-lists or None
         if not isinstance(input_tensor, list):
             input_tensor = [input_tensor]
 
         if self.add_encoder and self.add_decoder:
-            assert len(input_tensor) == 1, \
-                'input_tensor should only be length 1 for stage with both encoder and decoder'
+            assert len(input_tensor) == 1, (
+                    'input_tensor should only be length 1 '
+                    'for stage with both encoder and decoder'
+            )
             self.encoder.set_input_tensor(input_tensor[0])
         elif self.add_encoder:
-            assert len(input_tensor) == 1, \
-                'input_tensor should only be length 1 for stage with only encoder'
+            assert len(input_tensor) == 1, (
+                'input_tensor should only be length 1 '
+                'for stage with only encoder'
+            )
             self.encoder.set_input_tensor(input_tensor[0])
         elif self.add_decoder:
             if len(input_tensor) == 2:
@@ -505,32 +533,50 @@ class TransformerLanguageModel(MegatronModule):
                 self.decoder.set_input_tensor(None)
                 self.encoder_hidden_state = input_tensor[0]
             else:
-                raise Exception('input_tensor must have either length 1 or 2')
+                raise Exception(
+                    'input_tensor must have either length 1 or 2'
+                )
         else:
-            raise Exception('Stage must have at least either encoder or decoder')
+            raise Exception(
+                'Stage must have at least either encoder or decoder'
+            )
 
-    def forward(self, enc_input_ids, enc_position_ids, enc_attn_mask,
-                dec_input_ids=None, dec_position_ids=None, dec_attn_mask=None,
-                retriever_input_ids=None,
-                retriever_position_ids=None,
-                retriever_attn_mask=None,
-                enc_dec_attn_mask=None, tokentype_ids=None,
-                inference_params=None,
-                pooling_sequence_index=0,
-                enc_hidden_states=None, output_enc_hidden=False):
+    def forward(
+            self,
+            enc_input_ids,
+            enc_position_ids,
+            enc_attn_mask,
+            dec_input_ids=None,
+            dec_position_ids=None,
+            dec_attn_mask=None,
+            retriever_input_ids=None,
+            retriever_position_ids=None,
+            retriever_attn_mask=None,
+            enc_dec_attn_mask=None,
+            tokentype_ids=None,
+            inference_params=None,
+            pooling_sequence_index=0,
+            enc_hidden_states=None,
+            output_enc_hidden=False
+    ):
         args = get_args()
         # Encoder embedding.
         if self.pre_process:
-            encoder_input = self.embedding(enc_input_ids, enc_position_ids,
-                                           tokentype_ids=tokentype_ids)
+            encoder_input = self.embedding(
+                enc_input_ids,
+                enc_position_ids,
+                tokentype_ids=tokentype_ids
+            )
         else:
             encoder_input = None
 
         # Retriever embedding.
         if self.add_retriever and self.pre_process:
-            retriever_input = self.embedding(retriever_input_ids,
-                                             retriever_position_ids,
-                                             tokentype_ids=tokentype_ids)
+            retriever_input = self.embedding(
+                retriever_input_ids,
+                retriever_position_ids,
+                tokentype_ids=tokentype_ids
+            )
         else:
             retriever_input = None
 

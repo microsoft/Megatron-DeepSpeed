@@ -8,7 +8,13 @@ import time
 
 import torch
 from deepspeed.accelerator import get_accelerator
+from tensorboard.summary import Writer
 from packaging import version
+
+try:
+    import wandb
+except Exception:
+    wandb = None
 
 
 class TimerBase(ABC):
@@ -292,8 +298,15 @@ class Timers:
             print(output_string, flush=True)
 
 
-    def write(self, names, writer, iteration, normalizer=1.0,
-              reset=False, barrier=False):
+    def write(
+            self,
+            names: list[str],
+            writer: Writer,
+            iteration: int,
+            normalizer: float = 1.0,
+            reset: bool = False,
+            barrier: bool = False
+    ):
         """Write timers to a tensorboard writer
         Note that we only report maximum time across ranks to tensorboard.
         """
@@ -303,7 +316,16 @@ class Timers:
         assert normalizer > 0.0
         name_to_min_max_time = self._get_global_min_max_time(
             names, reset, barrier, normalizer)
+        timer_data = {
+            'timers/iteration': iteration,
+            **{
+                f'timers/{k}-time': name_to_min_max_time[k][1]
+                for k in name_to_min_max_time
+            }
+        }
+        if wandb is not None and getattr(wandb, 'run', None) is not None:
+            wandb.log(timer_data, commit=False)
         if writer is not None:
             for name in name_to_min_max_time:
                 _, max_time = name_to_min_max_time[name]
-                writer.add_scalar(name + '-time', max_time, iteration)
+                writer.add_scalar(f'{name}-time', max_time, iteration)

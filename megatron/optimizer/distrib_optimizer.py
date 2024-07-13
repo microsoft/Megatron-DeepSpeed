@@ -2,10 +2,11 @@
 
 """Megatron distributed optimizer."""
 
-from deepspeed.accelerator import get_accelerator
-if get_accelerator().device_name() == 'cuda':
+# from deepspeed.accelerator import get_accelerator
+# if get_accelerator().device_name() == 'cuda':
+try:
     from apex.optimizers import FusedAdam as Adam
-else:
+except Exception:
     from torch.optim import Adam
 
 import math

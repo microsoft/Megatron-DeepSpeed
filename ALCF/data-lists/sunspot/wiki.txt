@@ -1,0 +1,2 @@
+0.003548077173506675 /gila/Aurora_deployment/AuroraGPT/datasets/dolma/data_v1.7_Llama2Tokenizer/wiki-0000_text_document
+0.0018372203137874265 /gila/Aurora_deployment/AuroraGPT/datasets/dolma/data_v1.7_Llama2Tokenizer/wiki-0001_text_document
