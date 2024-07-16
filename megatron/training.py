@@ -1470,6 +1470,8 @@ def evaluate_and_print_results(prefix, forward_step_func,
         writer = interop_tool_logger(tb_writer=get_tensorboard_writer(), wandb_writer=get_wandb_writer())
     else:
         writer = interop_tool_logger()
+    x_axis_samples = 'Samples'
+    x_axis_tokens = 'Tokens'
 
     total_loss_dict, collected_non_loss_data = evaluate(
         forward_step_func, data_iterator, model,
@@ -1486,17 +1488,19 @@ def evaluate_and_print_results(prefix, forward_step_func,
                               iteration)
             writer.add_scalar(f'lm-loss-validation/{key} {data_type} vs samples',
                               total_loss_dict[key].item(),
-                              args.consumed_train_samples)
+                              args.consumed_train_samples,
+                              x_axis_samples)
             writer.add_scalar(f'lm-loss-validation/{key} {data_type} vs tokens',
                               total_loss_dict[key].item(),
-                              args.consumed_train_tokens)
+                              args.consumed_train_tokens,
+                              x_axis_tokens)
             if args.log_validation_ppl_to_tensorboard:
                 writer.add_scalar(f'lm-loss-validation/{key} {data_type} ppl', ppl,
                                   iteration)
                 writer.add_scalar(f'lm-loss-validation/{key} {data_type} ppl vs samples',
-                                  ppl, args.consumed_train_samples)
+                                  ppl, args.consumed_train_samples, x_axis_samples)
                 writer.add_scalar(f'lm-loss-validation/{key} {data_type} ppl vs tokens',
-                                  ppl, args.consumed_train_tokens)
+                                  ppl, args.consumed_train_tokens, x_axis_tokens)
 
     if process_non_loss_data_func is not None and writer.is_enabled() and is_last_rank():
         process_non_loss_data_func(collected_non_loss_data, iteration, writer)
