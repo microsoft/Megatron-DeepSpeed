@@ -131,7 +131,7 @@ def pretrain(train_valid_test_dataset_provider,
     args = get_args()
 
     if found_kill_switch():
-        print_datetime(f"Detected kill switch at {args.kill_switch_path}. Exiting")
+        print_datetime(f"Detected kill switch at {args.kill_switch_file}. Exiting")
         sys.exit()
 
     # Set pytorch JIT layer fusion options and warmup JIT functions.
@@ -1319,13 +1319,13 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
             print_datetime('exiting program at iteration {}'.format(iteration))
             sys.exit()
 
-        # Exiting based on kill-switch
+        # Exiting based on kill switch file
         if found_kill_switch():
             if args.save and not saved_checkpoint:
                 save_checkpoint_and_time(iteration, model, optimizer,
                                          opt_param_scheduler)
             torch.distributed.barrier()
-            print_datetime(f"Detected kill switch at {args.kill_switch_path}, "
+            print_datetime(f"Detected kill switch at {args.kill_switch_file}, "
                            f"iteration={iteration}. Exiting")
             sys.exit()
 
