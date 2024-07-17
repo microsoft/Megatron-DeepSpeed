@@ -385,7 +385,7 @@ def dump_weights(preamble, iteration, model, optimizer, tensor=None):
 
 def found_kill_switch():
     args = get_args()
-    if args.kill_switch_path is not None and os.path.exists(args.kill_switch_path):
+    if args.kill_switch_file is not None and os.path.exists(args.kill_switch_file):
         return True
     else:
         return False
