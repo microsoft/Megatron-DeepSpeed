@@ -28,5 +28,4 @@ class UniversalCheckpointingAnalysis(TensorBoardAnalysis):
         return self._csv_name
 
     def path_regex(self):
-        #return '.*tp(\d+).*pp(\d+).*dp(\d+).*sp(\d+)'
         return '.*tp_(\d+).*pp_(\d+).*dp_(\d+).*sp_(\d+)'
