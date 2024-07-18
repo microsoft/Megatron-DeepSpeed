@@ -41,7 +41,7 @@ NOTE: Make sure to update your `BASE_DATA_PATH` path in the `run_[bf16/fp16].sh`
 
 ### Step 1: Create ZeRO checkpoint
 ```bash 
-  bash examples_deepspeed/megatron_gpt/universal_checkpointing/run_bf16.sh
+  bash examples_deepspeed/universal_checkpointing/megatron_gpt/run_bf16.sh
 ```
 By default the script will create the checkpoints in folder `z1_uni_ckpt/checkpoints/gpt2/z1/bf16/tp2_pp2_dp2_sp1_toy`
 
@@ -69,7 +69,7 @@ drwxr-xr-x 2 user group  4096 Oct 21 09:01 global_step200
 
 ### Step 3: Resume training with Universal checkpoint of iteration 100
 ```bash 
-bash examples_deepspeed/megatron_gpt/universal_checkpointing/run_universal_bf16.sh
+bash examples_deepspeed/universal_checkpointing/megatron_gpt/run_universal_bf16.sh
 ```
 This resumption script effects the loading of universal checkpoint rather than the ZeRO checkpoint in the folder by passing `--universal-checkpoint` command line flag to the main training script (i.e., `pretrain_gpt.py`). 
 
