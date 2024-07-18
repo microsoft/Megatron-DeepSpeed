@@ -1,3 +1,5 @@
+# Copyright (C) 2024 Habana Labs, Ltd. an Intel Company.
+
 import torch
 from tests.test_utilities import Utils
 from megatron.core import ModelParallelConfig
@@ -21,7 +23,9 @@ def test_get_forward_backward_func():
 def test_deallocate_output_tensor():
     out = torch.tensor([[1, 2, 3], [4, 5, 6]])
     schedule.deallocate_output_tensor(out)
-    assert(out.nelement() == 1) 
+    assert(out.nelement() == 6)
+    schedule.deallocate_output_tensor(out, True)
+    assert(out.nelement() == 1)
 
 def test_forward_backward_func_without_pipeline_parallel(mocker):
     from megatron.core.pipeline_parallel import get_forward_backward_func

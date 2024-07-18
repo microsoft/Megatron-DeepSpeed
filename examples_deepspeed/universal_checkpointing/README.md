@@ -77,6 +77,8 @@ Please see the corresponding [pull request](https://github.com/microsoft/Megatro
 
 Combining sequence parallelism with data parallelism is another good use case for universal checkpointing, see [sp pull request](https://github.com/microsoft/DeepSpeed/pull/4752) for example and visualization of matching loss values.
 
+Notes: The model weights using the ```--no-pipeline-parallel``` parameter and the model weights not using the ```--no-pipeline-parallel``` parameter are currently not supported for mutual conversion.
+
 ### TensorBoard Log Analysis
 
 The Universal Checkpointing example includes a TensorBoard analysis script that will generate `csv` files and `png` plots across the unviersal checkpointing training steps for comparison of training and validation loss curves.
@@ -116,4 +118,25 @@ Repeat steps in ZeRO stage 1 training above with the following modifications to 
 * Set ZERO_STAGE=2 
 * Add `--no-pipeline-parallel` flag to deepspeed options  
 
-## ZeRO stage 3 training (**Coming soon**)
+## ZeRO stage 3 training
+Repeat steps in ZeRO stage 1 training above with the following modifications to your job batch scripts:
+* Set ZERO_STAGE=3
+* Add `--no-pipeline-parallel` flag to deepspeed options
+
+> **Note:** that the stage 3 universal checkpoint currently supports Data parallelism.
+
+Below is the visualization of the `png` files generated from ZeRO stage 3.
+
+<div align="center">
+  <img src="assets/image/uc_stage3_char_training_loss.png" alt="" width="600"/>
+
+  *Figure 1: Training LM loss curve for first 200 training steps of Step 1 (TP=1, PP=1, DP=4) and training steps 101 to 200 of Step 3 (TP=1, PP=1, DP=2), which was loaded using the Universal Checkpoint.*
+</div>
+
+<div align="center">
+  <img src="assets/image/uc_stage3_char_validation_loss.png" alt="" width="600"/>
+
+  *Figure 2: Validation LM loss curve for first 200 training steps of Step 1 (TP=1, PP=1, DP=4) and training steps 101 to 200 of Step 3 (TP=1, PP=1, DP=2), which was loaded using the Universal Checkpoint.*
+</div>
+
+

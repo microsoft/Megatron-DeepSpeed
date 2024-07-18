@@ -1,3 +1,4 @@
+# Copyright (C) 2024 Habana Labs, Ltd. an Intel Company.
 # Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
 
 """General utilities."""
@@ -178,7 +179,7 @@ def get_ltor_masks_and_position_ids(data,
     attention_mask = None
     if not skip_mask:
         attention_mask = torch.tril(torch.ones(
-            (att_mask_batch, seq_length, seq_length))).view(att_mask_batch, 1, seq_length, seq_length)
+            (att_mask_batch, seq_length, seq_length), device=data.device)).view(att_mask_batch, 1, seq_length, seq_length)
 
     # Loss mask.
     loss_mask = torch.ones(data.size(), dtype=torch.float, device=data.device)
@@ -218,7 +219,6 @@ def get_ltor_masks_and_position_ids(data,
     # Convert attention mask to binary:
     if not skip_mask:
         attention_mask = (attention_mask < 0.5)
-        attention_mask = attention_mask.to(data.device)
 
     return attention_mask, loss_mask, position_ids
 
@@ -380,4 +380,12 @@ def dump_weights(preamble, iteration, model, optimizer, tensor=None):
             if hasattr(model[0].module.tied_modules, "embed"):
                 p = model[0].module.tied_modules.embed.word_embeddings.weight._hp_param
                 fh.write(f"{get_fingerprint(p)} module.tied_modules.embed.word_embeddings.weight._hp_param {p.shape}\n")
+
+
+def found_kill_switch():
+    args = get_args()
+    if args.kill_switch_file is not None and os.path.exists(args.kill_switch_file):
+        return True
+    else:
+        return False
 
