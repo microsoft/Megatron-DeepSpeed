@@ -24,7 +24,6 @@ def main():
 
     analyzer = get_analyzer(args.analyzer)
 
-    #import pdb; pdb.set_trace()
     for tb_path in tb_log_paths:
         print(f"Processing: {tb_path}")
         analyzer.set_names(tb_path)
@@ -33,7 +32,6 @@ def main():
         event_accumulator.Reload()
 
         events = event_accumulator.Scalars(args.tb_event_key)
-        #import pdb; pdb.set_trace()
 
         x = [x.step for x in events]
         y = [x.value for x in events]
@@ -71,8 +69,6 @@ def plot_csv():
                 x.append(int(row[1]))  # Assuming the first column contains x values
                 y.append(float(row[2]))  # Assuming the second column contains y values
 
-        #import pdb; pdb.set_trace()
-
         plt.plot(x, y, label=f'{analyzer.get_label_name()}')
 
     plt.grid(True)
@@ -83,7 +79,6 @@ def plot_csv():
     plt.savefig(args.plot_name)
 
 if __name__ == "__main__":
-    #import pdb; pdb.set_trace()
     if args.plot_only:
         plot_csv()
     else:

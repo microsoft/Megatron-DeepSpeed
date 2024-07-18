@@ -1,5 +1,4 @@
 #!/bin/bash
-# This example script is contributed by external user https://github.com/LydiaXiaohongLi
 set -ex
 
 DIR=`pwd`
@@ -7,15 +6,7 @@ DIR=`pwd`
 # Change the below configurations here
 BASE_PATH=dataset
 DS_CONFIG=${BASE_PATH}/deepspeed.json
-#DATASET_1="./tmp/data/bookcorpus_train_1m_text_sentence"
-#DATASET="1 ${DATASET_1}"
-
-#DATASET_1="${BASE_PATH}"
-#DATASET="1 ${DATASET_1}"
-
 DATASET=${BASE_PATH}/my-gpt2_text_document
-
-#CHECKPOINT_PATH=./tmp
 TOKENIZER_PATH=${BASE_PATH}/llama-7b/tokenizer.model # offical llama tokenizer.model
 
 GPUS_PER_NODE=8
@@ -39,20 +30,16 @@ GRAD_CLIP=1
 activation_checkpoint="false"
 
 ZERO_STAGE=1
-#DTYPE="fp16"
 DTYPE="bf16"
 
 # 3D parallelism of training
 TP=2
 PP=2
-DP=1
+DP=2
 SP=1
 WORLD_SIZE=$((TP*PP*DP*SP))
-#GLOBAL_BATCH_SIZE=32 # e.g. llama: 4M tokens
 GLOBAL_BATCH=32
-#MICRO_BATCH_SIZE=4
 MICRO_BATCH=$((GLOBAL_BATCH/WORLD_SIZE))
-#TRAIN_STEPS=250000 # e.g. llama: 1T tokens / 4M tokens_per_batch = 250000 steps
 TRAIN_ITERS=250000
 LR=3e-4
 MIN_LR=3e-5
@@ -68,14 +55,14 @@ else
 fi
 
 # 3D parallelism of checkpoint to load
-LOAD_TP=2
-LOAD_PP=2
-LOAD_DP=2
-LOAD_SP=1
-RUN_TAG="uni_load${LOAD_TP}_${LOAD_PP}_${LOAD_DP}_${LOAD_SP}"
+LOAD_TP=$TP
+LOAD_PP=$PP
+LOAD_DP=$DP
+LOAD_SP=$SP
+RUN_TAG="save"
 
 
-EXP_DIR="z${ZERO_STAGE}_uni_ckpt"
+EXP_DIR="z${ZERO_STAGE}_uni_ckpt" 
 CHECKPOINT_PATH=${EXP_DIR}/checkpoints/llama/z${ZERO_STAGE}/$DTYPE/tp${TP}_pp${PP}_dp${DP}_sp${SP}_${SIZE_TAG}
 LOAD_CHECKPOINT_PATH=${EXP_DIR}/checkpoints/llama/z${ZERO_STAGE}/$DTYPE/tp${LOAD_TP}_pp${LOAD_PP}_dp${LOAD_DP}_sp${LOAD_SP}_${SIZE_TAG}
 LOG_DIR="${EXP_DIR}/tensorboard/llama/$DTYPE/tp${TP}_pp${PP}_dp${DP}_sp${SP}_hd${HIDDEN}_nl${LAYERS}_gbsz${GLOBAL_BATCH}_mbsz${MICRO_BATCH}_z${ZERO_STAGE}_LR_${LR}_${MIN_LR}_${DTYPE}_${SIZE_TAG}_${RUN_TAG}"
@@ -91,8 +78,6 @@ mkdir -p $LOG_DIR
 # --normalization rmsnorm \
 # --disable-bias-linear \
 ######################################
-
-
 
 cat <<EOT > $DS_CONFIG
 {
@@ -111,20 +96,6 @@ cat <<EOT > $DS_CONFIG
   "wall_clock_breakdown" : false
 }
 EOT
-
-
-# "bf16": {
-#   "enabled": false
-# },
-
-# "fp16": {
-#   "enabled": true,
-#   "loss_scale": 0,
-#   "loss_scale_window": 50,
-#   "hysteresis": 2,
-#   "min_loss_scale": 1,
-#   "initial_scale_power": 12
-# },
 
 ds_args=""
 ds_args=" --deepspeed ${ds_args}"
@@ -193,7 +164,6 @@ options="\
        --normalization rmsnorm \
        --disable-bias-linear \
        --tensorboard-dir $LOG_DIR \
-       --universal-checkpoint \
        $ds_args
 "
 
@@ -203,54 +173,3 @@ run_cmd="deepspeed --master_port 29700 $WORKER_STR ${DIR}/pretrain_gpt.py $@ ${o
 echo ${options}
 echo ${run_cmd}
 eval ${run_cmd}
-
-#DISTRIBUTED_ARGS="--nproc_per_node $GPUS_PER_NODE --nnodes $NNODES --node_rank $NODE_RANK --master_addr $MASTER_ADDR --master_port $MASTER_PORT"
-
-#torchrun $DISTRIBUTED_ARGS \
-#       pretrain_gpt.py \
-#       --tensor-model-parallel-size $TP \
-#       --pipeline-model-parallel-size $PP \
-#       --ds-sequence-parallel-size $SP \
-#       --num-layers $NUM_LAYERS \
-#       --hidden-size $HIDDEN_SIZE \
-#       --ffn-hidden-size $FFN_HIDDEN_SIZE \
-#       --num-attention-heads $NUM_HEADS \
-#       --micro-batch-size $MICRO_BATCH \
-#       --global-batch-size $GLOBAL_BATCH \
-#       --seq-length $SEQ \
-#       --max-position-embeddings $SEQ \
-#       --train-iters $TRAIN_ITERS \
-#       --save ${CHECKPOINT_PATH} \
-#       --load ${LOAD_CHECKPOINT_PATH} \
-#       --data-path $DATASET \
-#       --data-impl mmap \
-#       --tokenizer-type GPTSentencePieceTokenizer \
-#       --tokenizer-model $TOKENIZER_PATH \
-#       --split 949,50,1 \
-#       --distributed-backend nccl \
-#       --lr $LR \
-#       --lr-decay-style cosine \
-#       --min-lr $MIN_LR \
-#       --weight-decay $WEIGHT_DECAY \
-#       --clip-grad $GRAD_CLIP \
-#       --lr-warmup-iters $LR_WARMUP_STEPS \
-#       --optimizer adam \
-#       --adam-beta1 0.9 \
-#       --adam-beta2 0.95 \
-#       --log-interval 1 \
-#       --save-interval 100 \
-#       --eval-interval 10 \
-#       --eval-iters 40 \
-#	   --exit-interval ${EXIT_INTERVAL} \
-#       --${DTYPE} \
-#       --no-query-key-layer-scaling \
-#       --attention-dropout 0 \
-#       --hidden-dropout 0 \
-#       --use-rotary-position-embeddings \
-#       --untie-embeddings-and-output-weights \
-#       --swiglu \
-#       --normalization rmsnorm \
-#       --disable-bias-linear \
-#       --tensorboard-dir $LOG_DIR \
-#       --universal-checkpoint \
-#       $ds_args
