@@ -85,7 +85,7 @@ The Universal Checkpointing example includes a TensorBoard analysis script that 
 
 After Step 3 is completed, the script may be executed as follows:
 ```bash
-bash examples_deepspeed/universal_checkpointing/megatron_gpt/run_tb_analysis.sh z1_uni_ckpt
+bash examples_deepspeed/universal_checkpointing/megatron_gpt/run_tb_analysis_gpt.sh z1_uni_ckpt
 ```
 
 The script will output the following `csv` files:
