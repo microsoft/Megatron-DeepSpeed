@@ -9,7 +9,7 @@ import pandas as pd
 import csv
 import matplotlib.pyplot as plt
 from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
-from utils import get_analyzer, find_files_affix, find_files_suffix
+from utils import get_analyzer, find_files_prefix, find_files_suffix
 from arguments import parser
 
 args = parser.parse_args()
@@ -19,8 +19,8 @@ if args.use_sns:
     sns.set()
 
 def main():
-    target_affix = 'events.out.tfevents'
-    tb_log_paths = find_files_affix(args.tb_dir, target_affix)
+    target_prefix = 'events.out.tfevents'
+    tb_log_paths = find_files_prefix(args.tb_dir, target_prefix)
 
     analyzer = get_analyzer(args.analyzer)
 
