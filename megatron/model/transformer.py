@@ -920,7 +920,8 @@ class ParallelTransformerLayer(MegatronModule):
             else:
                 self.input_layernorm = LayerNorm(
                     config.hidden_size,
-                    eps=config.layernorm_epsilon)
+                    eps=config.layernorm_epsilon,
+                    apply_layernorm_1p=args.apply_layernorm_1p)
         else:
             self.input_layernorm = RMSNorm(config.hidden_size, config.layernorm_epsilon)
         # Self attention.
@@ -946,7 +947,8 @@ class ParallelTransformerLayer(MegatronModule):
             else:
                 self.post_attention_layernorm = LayerNorm(
                     config.hidden_size,
-                    eps=config.layernorm_epsilon)
+                    eps=config.layernorm_epsilon,
+                    apply_layernorm_1p=args.apply_layernorm_1p)
         else:
             self.post_attention_layernorm = RMSNorm(config.hidden_size, config.layernorm_epsilon)
             # Cross attention.
@@ -1769,7 +1771,8 @@ class ParallelTransformer(MegatronModule):
                 else:
                     self.final_layernorm = LayerNorm(
                         config.hidden_size,
-                        eps=config.layernorm_epsilon)
+                        eps=config.layernorm_epsilon,
+                        apply_layernorm_1p=args.apply_layernorm_1p)
             else:
                 self.final_layernorm = RMSNorm(config.hidden_size, config.layernorm_epsilon)
 
