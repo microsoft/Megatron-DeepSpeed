@@ -256,8 +256,8 @@ class Embedding(MegatronModule):
 
         # Dropout.
         if self.sequence_parallel:
-            # already partition sequence, do not need scatter_to_sequence_parallel_region
-            # embeddings = tensor_parallel.scatter_to_sequence_parallel_region(embeddings)
+            # already partition sequence, do not need scatter_to_sequence_parallel_region ?
+            embeddings = tensor_parallel.scatter_to_sequence_parallel_region(embeddings)
             with tensor_parallel.get_cuda_rng_tracker().fork():
                 embeddings = self.embedding_dropout(embeddings)
         else:
