@@ -4,6 +4,7 @@
       https://github.com/NVIDIA/apex
    with some changes. """
 
+from deepspeed.accelerator.real_accelerator import get_accelerator
 import numbers
 import torch
 from torch.nn.parameter import Parameter
@@ -13,6 +14,7 @@ from torch.nn import functional as F
 import inspect
 
 from megatron.core.utils import make_viewless_tensor
+from megatron import get_args
 
 try:
     from apex.contrib.layer_norm.layer_norm import FastLayerNormFN
@@ -56,8 +58,12 @@ class MixedFusedLayerNorm(torch.nn.Module):
             normalized_shape = (normalized_shape,)
         self.normalized_shape = torch.Size(normalized_shape)
         self.eps = eps
-        self.weight = Parameter(torch.Tensor(*normalized_shape))
-        self.bias = Parameter(torch.Tensor(*normalized_shape))
+        self.weight = Parameter(torch.empty(*normalized_shape,
+                                device=get_accelerator().current_device_name(),
+                                dtype=get_args().params_dtype))
+        self.bias = Parameter(torch.empty(*normalized_shape,
+                              device=get_accelerator().current_device_name(),
+                              dtype=get_args().params_dtype))
         self.reset_parameters()
         self.no_persist_layer_norm = no_persist_layer_norm
         self.sequence_parallel = sequence_parallel
