@@ -514,8 +514,7 @@ def convert_ckpt():
     # cur_refactor.inorder_show_record()
 
     if args.to_hf_ckpt:
-        
-        save_path = "/yahao/Megatron-DeepSpeed/test-llama-7b-hf/"
+        save_path = args.save
         if not os.path.exists(save_path):
             Path(save_path).mkdir(parents=True, exist_ok=True)
         ckpt_per_pp_path = os.path.join(save_path, f"model_pp{mpu.get_pipeline_model_parallel_rank()}.pt")
