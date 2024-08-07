@@ -1,5 +1,6 @@
-DS_CONFIG=./examples_deepspeed/finetune_hf_llama/ds_config.json
-DATASET_PATH=./alpaca_data.json
+BASE_PATH=./examples_deepspeed/finetune_hf_llama
+DS_CONFIG=${BASE_PATH}/ds_config.json
+DATASET_PATH=${BASE_PATH}/alpaca_data.json
 # dataset link: https://github.com/tatsu-lab/stanford_alpaca/blob/main/alpaca_data.json
 
 HF_LLAMA_PATH=/data/llama-7b/
@@ -29,6 +30,16 @@ MEGA_DS_LLAMA_PATH=./"llama-7b-mega-ds-T${TP}P${PP}"
 # --normalization rmsnorm \
 # --disable-bias-linear \
 ######################################
+
+if [ "$1" = "convert" ]; then
+cat <<EOT > $DS_CONFIG
+{
+  "train_batch_size" : $GLOBAL_BATCH_SIZE,
+  "train_micro_batch_size_per_gpu": $MICRO_BATCH_SIZE,
+  "steps_per_print": 100
+}
+EOT
+else
 cat <<EOT > $DS_CONFIG
 {
   "train_batch_size" : $GLOBAL_BATCH_SIZE,
@@ -42,6 +53,8 @@ cat <<EOT > $DS_CONFIG
   }
 }
 EOT
+fi
+
 
 
 covert_args="deepspeed tools/hf2megads_weight_converter.py \
@@ -50,7 +63,8 @@ covert_args="deepspeed tools/hf2megads_weight_converter.py \
 --save $MEGA_DS_LLAMA_PATH"
 
 finetune_args="deepspeed finetune_llama.py \
---load $MEGA_DS_LLAMA_PATH"
+--load $MEGA_DS_LLAMA_PATH \
+--finetune"
 
 comm_args="--tensor-model-parallel-size $TP \
 --pipeline-model-parallel-size $PP \
@@ -88,7 +102,7 @@ comm_args="--tensor-model-parallel-size $TP \
 --zero-stage 0 \
 --tokenizer-type HFTokenizer \
 --tokenizer-model $HF_LLAMA_PATH \
---deepspeed_config ./examples_deepspeed/finetune_hf_llama/ds_config.json \
+--deepspeed_config ${BASE_PATH}/ds_config.json \
 --deepspeed \
 --distributed-backend nccl \
 --num-workers 0 \

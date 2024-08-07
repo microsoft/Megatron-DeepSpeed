@@ -309,22 +309,18 @@ def convert_hf_to_mega_ds():
 
     del loaded
 
-    unwrapped_model = unwrap_model([model], (torchDDP, LocalDDP, Float16Module))
-    optimizer = get_megatron_optimizer(unwrapped_model)
-    opt_param_scheduler = get_optimizer_param_scheduler(optimizer)
-
     #init model and save
     print_rank_0(f"before deepspeed init")
     ds_engine, _, _, _ = deepspeed.initialize(
         model=model,
-        optimizer=optimizer,
+        optimizer=None,
         args=args,
-        lr_scheduler=opt_param_scheduler,
+        lr_scheduler=None,
         mpu=mpu if args.no_pipeline_parallel else None)
     print_rank_0(f"after deepspeed init")
 
     print_rank_0(f"mega-ds checkpoint will be saved in {args.save}")
-    save_checkpoint(0, [ds_engine], optimizer, opt_param_scheduler)
+    save_checkpoint(0, [ds_engine], None, None)
     print_rank_0(f"save checkpoint completed")
 
 
