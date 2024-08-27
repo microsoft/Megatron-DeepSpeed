@@ -171,8 +171,8 @@ def _set_wandb_writer(args):
            getattr(args, 'wandb_exp_name', '') == '':
             print('WARNING: WANDB writing requested but no legit wandb '
                   'project or experiment name provided, '
-                  'therefore no WANDB logs will be written.'
-                  , flush=True)
+                  'therefore no WANDB logs will be written '
+                  'according to random generated project or experiment name.', flush=True)
             return
 
         try:
