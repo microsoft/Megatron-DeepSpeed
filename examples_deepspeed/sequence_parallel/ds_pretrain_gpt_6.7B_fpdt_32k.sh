@@ -3,7 +3,7 @@ dir=`pwd`
 ###############################################################################
 ### Main configs
 ## GPT-3 models use 2K sequence length/context window
-seq_len=2048
+seq_len=262144 # need to be divisible by sp size * sp size * num chunks = 4 * 4 * 32 = 128
 
 ## The "GPT-3 XXX" below are configs from GPT-3 paper
 ## https://arxiv.org/abs/2005.14165, choose based on
@@ -16,15 +16,15 @@ seq_len=2048
 ## We changed min_lr to a lower number (1.0e-6), which we found is able to
 ## provide better zero-shot eval results.
 
-# GPT-3 Small 125M
-model_size=0.125
-num_layers=12
-hidden_size=768
-num_attn_heads=12
-global_batch_size=256
-lr=6.0e-4
-min_lr=1.0e-6
-init_std=0.02
+## GPT-3 Small 125M
+# model_size=0.125
+# num_layers=12
+# hidden_size=768
+# num_attn_heads=12
+# global_batch_size=256
+# lr=6.0e-4
+# min_lr=1.0e-6
+# init_std=0.02
 
 ## GPT-3 Medium 350M
 # model_size=0.35
@@ -41,7 +41,7 @@ init_std=0.02
 # num_layers=24
 # hidden_size=1536
 # num_attn_heads=16
-# global_batch_size=256
+# global_batch_size=1
 # lr=2.5e-4
 # min_lr=1.0e-6
 # init_std=0.015
@@ -51,7 +51,7 @@ init_std=0.02
 # num_layers=24
 # hidden_size=2048
 # num_attn_heads=16
-# global_batch_size=512
+# global_batch_size=1
 # lr=2.0e-4
 # min_lr=1.0e-6
 # init_std=0.013
@@ -61,27 +61,37 @@ init_std=0.02
 # num_layers=32
 # hidden_size=2560
 # num_attn_heads=32
-# global_batch_size=512
+# global_batch_size=1
 # lr=1.6e-4
 # min_lr=1.0e-6
 # init_std=0.011
 
 ## GPT-3 6.7B
-# model_size=6.7
-# num_layers=32
-# hidden_size=4096
-# num_attn_heads=32
-# global_batch_size=1024
-# lr=1.2e-4
-# min_lr=1.0e-6
-# init_std=0.009
+model_size=6.7
+num_layers=32
+hidden_size=4096
+num_attn_heads=32
+global_batch_size=1
+lr=1.2e-4
+min_lr=1.0e-6
+init_std=0.009
 
 ## GPT-3 13B
 # model_size=13
 # num_layers=40
 # hidden_size=5120
 # num_attn_heads=40
-# global_batch_size=1024
+# global_batch_size=1
+# lr=1.0e-4
+# min_lr=1.0e-6
+# init_std=0.008
+
+# GPT-3 30B
+# model_size=30
+# num_layers=64
+# hidden_size=6144
+# num_attn_heads=64
+# global_batch_size=1
 # lr=1.0e-4
 # min_lr=1.0e-6
 # init_std=0.008
@@ -91,7 +101,7 @@ init_std=0.02
 # num_layers=96
 # hidden_size=12288
 # num_attn_heads=96
-# global_batch_size=1536
+# global_batch_size=1
 # lr=0.6e-4
 # min_lr=1.0e-6
 # init_std=0.005
@@ -131,7 +141,11 @@ lr_decay_style="cosine"
 ###############################################################################
 ### Parallelism configs
 ## Model parallelism, 1 is no MP
-mp_size=4
+## Currently we only support MP=1 with SP>1
+mp_size=1
+
+## Sequence parallelism, 1 is no SP
+sp_size=4
 
 ## Pipeline parallelism. To disable PP, set pp_size to 1 and no_pp to true.
 ## Note that currently both curriculum learning and random-LTD are NOT
@@ -140,33 +154,34 @@ pp_size=1
 no_pp="true"
 
 ## ZeRO-based data parallelism, stage=0 will disable ZeRO
-zero_stage=1
+zero_stage=3
 
 ## Total number of GPUs. ds_ssh is from DeepSpeed library.
-num_gpus=4
-num_gpus_pernode=4
-num_node=1
+num_gpus=$(($(ds_ssh nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)-2))
+num_gpus_pernode=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
+num_node=$(( ${num_gpus} / ${num_gpus_pernode} ))
 
 ## Data parallel size.
-dp_size=$(( ${num_gpus} / ${pp_size} / ${mp_size} ))
+dp_size=$(( ${num_gpus} / ${pp_size} / ${mp_size} / ${sp_size} ))
 
 ## Micro batch size per GPU
 ## Make sure that batch_size <= global_batch_size*pp_size*mp_size/num_gpus
 ## Reduce it manually if GPU OOM
 # batch_size=$(( ${global_batch_size} / ${dp_size} ))
-batch_size=32
+batch_size=2
+
 ###############################################################################
 ### Misc configs
-log_interval=1
-eval_iters=0
-eval_interval=10000000
+log_interval=10
+eval_iters=10
+eval_interval=100
 # num_save controls how frequent to save checkpoint. num_save=20 means that a
 # checkpoint will be saved every 5% of training. For longer training you would
 # want larger num_save to save more frequently, and vice versa.
-num_save=0
+num_save=100
 estimated_train_iter=$((${train_tokens} / ${seq_len} / ${global_batch_size}))
 # save_interval=$((${estimated_train_iter} / ${num_save}))
-save_interval=9370000
+save_interval=100
 
 ## Activation checkpointing saves GPU memory, but reduces training speed
 activation_checkpoint="true"
@@ -174,7 +189,7 @@ activation_checkpoint="true"
 
 ## Whether or not log optimizer states (norms, max abs values) to tensorboard.
 ## This is not required for training and might save GPU memory when turned off.
-log_optimizer_state="true"
+log_optimizer_state="false"
 ###############################################################################
 ### Output and data configs
 current_time=$(date "+%Y.%m.%d_%H.%M.%S")
@@ -182,16 +197,13 @@ host="${HOSTNAME}"
 seed=1234
 num_workers=0
 
-
-# /fs/scratch/PAS2312/yjhmitweb
-# data_path="/users/PAS2312/yjhmitweb/ai_general/Megatron-DeepSpeed/dataset/BookCorpusDataset_text_document"
-data_path="/fs/scratch/PAS2312/yjhmitweb/pile_text_document"
-# if [ ! -f "BookCorpusDataset_text_document.bin" ]; then
-#     wget https://the-eye.eu/public/AI/pile_neox/data/BookCorpusDataset_text_document.bin
-# fi
-# if [ ! -f "BookCorpusDataset_text_document.idx" ]; then
-#     wget https://the-eye.eu/public/AI/pile_neox/data/BookCorpusDataset_text_document.idx
-# fi
+data_path="BookCorpusDataset_text_document"
+if [ ! -f "BookCorpusDataset_text_document.bin" ]; then
+    wget https://the-eye.eu/public/AI/pile_neox/data/BookCorpusDataset_text_document.bin
+fi
+if [ ! -f "BookCorpusDataset_text_document.idx" ]; then
+    wget https://the-eye.eu/public/AI/pile_neox/data/BookCorpusDataset_text_document.idx
+fi
 
 vocab_path="gpt2-vocab.json"
 if [ ! -f "$vocab_path" ]; then
@@ -203,7 +215,7 @@ if [ ! -f "$merge_path" ]; then
 fi
 
 prescale_grad="true"
-jobname="gpt_${model_size}B_chunk_tok${train_tokens_in_billion}B"
+jobname="gpt_${model_size}B_tok${train_tokens_in_billion}B"
 jobname="${jobname}_lr${lr}_min${min_lr}_w${lr_warmup_tokens_in_million}M_d${lr_decay_tokens_in_billion}B_${lr_decay_style}"
 jobname="${jobname}_gbs${global_batch_size}_mbs${batch_size}_g${num_gpus}"
 if [[ $zero_stage -gt 0 ]]; then
@@ -222,9 +234,9 @@ fi
 jobname="${jobname}_seed${seed}_rebase"
 
 username=$(whoami)
-output_home="/users/PAS2312/yjhmitweb/ai_general/final_project_code/github/check_output_baseline"
+output_home="output"
 log_path="${output_home}/log/"
-checkpoint_path="${output_home}/ckpt"
+checkpoint_path="${output_home}/checkpoint/${jobname}"
 tensorboard_dir="${output_home}/tensorboard/"
 tensorboard_path="${tensorboard_dir}${jobname}_${host}_${current_time}"
 mkdir -p ${log_path}
@@ -243,7 +255,11 @@ megatron_options=" \
     --override-opt_param-scheduler \
     --adam-beta1 0.9 \
     --adam-beta2 0.95 \
-    --tensor-model-parallel-size ${mp_size} \
+    --tensor-model-parallel-size 1 \
+    --ds-sequence-parallel-fpdt \
+    --ds-sequence-parallel-fpdt-chunk-size 65536 \
+    --ds-sequence-parallel-fpdt-offloading \
+    --ds-sequence-parallel-size ${sp_size} \
     --init-method-std ${init_std} \
     --lr-decay-tokens ${lr_decay_tokens} \
     --lr-warmup-tokens ${lr_warmup_tokens} \
@@ -277,10 +293,10 @@ megatron_options=" \
     --save ${checkpoint_path} \
     --no-async-tensor-model-parallel-allreduce \
     --use-flash-attn-v2 \
+    --tensorboard-queue-size 1 \
     --use-rotary-position-embeddings \
     --rotary-percent 0.25 \
     --rotary-position-embeddings-theta 100000000 \
-    --tensorboard-queue-size 1 \
     --log-timers-to-tensorboard \
     --log-batch-size-to-tensorboard \
     --log-validation-ppl-to-tensorboard \
@@ -318,7 +334,8 @@ fi
 
 if [ "${activation_checkpoint}" = "true" ]; then
 deepspeed_options="${deepspeed_options} \
-    --deepspeed-activation-checkpointing"
+    --deepspeed-activation-checkpointing \
+    --checkpoint-in-cpu"
 fi
 
 ## When saving checkpoint to a storage with cache, their could be consistency
@@ -340,4 +357,4 @@ if [[ $iteration -gt 0 ]]; then
     ds_ssh "echo $iteration_2 > $iteration_file_2"
 fi
 
-deepspeed --num_nodes 1 --num_gpus 4 --hostfile=/users/PAS2312/yjhmitweb/ai_general/final_project_code/github/baseline_hosts ${dir}/../../pretrain_gpt.py ${megatron_options} ${data_options} ${deepspeed_options}
+deepspeed ${dir}/../../pretrain_gpt.py ${megatron_options} ${data_options} ${deepspeed_options} 2>&1 | tee ${log_path}/${jobname}_${host}_${current_time}.log
