@@ -16,15 +16,15 @@ seq_len=2048
 ## We changed min_lr to a lower number (1.0e-6), which we found is able to
 ## provide better zero-shot eval results.
 
-# GPT-3 Small 125M
-model_size=0.125
-num_layers=12
-hidden_size=768
-num_attn_heads=12
-global_batch_size=256
-lr=6.0e-4
-min_lr=1.0e-6
-init_std=0.02
+## GPT-3 Small 125M
+# model_size=0.125
+# num_layers=12
+# hidden_size=768
+# num_attn_heads=12
+# global_batch_size=256
+# lr=6.0e-4
+# min_lr=1.0e-6
+# init_std=0.02
 
 ## GPT-3 Medium 350M
 # model_size=0.35
@@ -47,14 +47,14 @@ init_std=0.02
 # init_std=0.015
 
 ## GPT-3 XL 1.3B
-# model_size=1.3
-# num_layers=24
-# hidden_size=2048
-# num_attn_heads=16
-# global_batch_size=512
-# lr=2.0e-4
-# min_lr=1.0e-6
-# init_std=0.013
+model_size=1.3
+num_layers=24
+hidden_size=2048
+num_attn_heads=16
+global_batch_size=512
+lr=2.0e-4
+min_lr=1.0e-6
+init_std=0.013
 
 ## GPT-3 2.7B
 # model_size=2.7
@@ -136,16 +136,16 @@ mp_size=4
 ## Pipeline parallelism. To disable PP, set pp_size to 1 and no_pp to true.
 ## Note that currently both curriculum learning and random-LTD are NOT
 ## compatible with pipeline parallelism.
-pp_size=1
-no_pp="true"
+pp_size=8
+no_pp="false"
 
 ## ZeRO-based data parallelism, stage=0 will disable ZeRO
 zero_stage=1
 
 ## Total number of GPUs. ds_ssh is from DeepSpeed library.
-num_gpus=4
-num_gpus_pernode=4
-num_node=1
+num_gpus=$(($(ds_ssh nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)-2))
+num_gpus_pernode=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
+num_node=$(( ${num_gpus} / ${num_gpus_pernode} ))
 
 ## Data parallel size.
 dp_size=$(( ${num_gpus} / ${pp_size} / ${mp_size} ))
@@ -154,19 +154,19 @@ dp_size=$(( ${num_gpus} / ${pp_size} / ${mp_size} ))
 ## Make sure that batch_size <= global_batch_size*pp_size*mp_size/num_gpus
 ## Reduce it manually if GPU OOM
 # batch_size=$(( ${global_batch_size} / ${dp_size} ))
-batch_size=32
+batch_size=2
 ###############################################################################
 ### Misc configs
-log_interval=1
-eval_iters=0
-eval_interval=10000000
+log_interval=10
+eval_iters=10
+eval_interval=100
 # num_save controls how frequent to save checkpoint. num_save=20 means that a
 # checkpoint will be saved every 5% of training. For longer training you would
 # want larger num_save to save more frequently, and vice versa.
-num_save=0
+num_save=100
 estimated_train_iter=$((${train_tokens} / ${seq_len} / ${global_batch_size}))
 # save_interval=$((${estimated_train_iter} / ${num_save}))
-save_interval=9370000
+save_interval=100
 
 ## Activation checkpointing saves GPU memory, but reduces training speed
 activation_checkpoint="true"
@@ -182,16 +182,12 @@ host="${HOSTNAME}"
 seed=1234
 num_workers=0
 
-
-# /fs/scratch/PAS2312/yjhmitweb
-# data_path="/users/PAS2312/yjhmitweb/ai_general/Megatron-DeepSpeed/dataset/BookCorpusDataset_text_document"
-data_path="/fs/scratch/PAS2312/yjhmitweb/pile_text_document"
-# if [ ! -f "BookCorpusDataset_text_document.bin" ]; then
-#     wget https://the-eye.eu/public/AI/pile_neox/data/BookCorpusDataset_text_document.bin
-# fi
-# if [ ! -f "BookCorpusDataset_text_document.idx" ]; then
-#     wget https://the-eye.eu/public/AI/pile_neox/data/BookCorpusDataset_text_document.idx
-# fi
+## Public the Pile dataset, can be downloaded at
+## https://mystic.the-eye.eu/public/AI/pile_neox/ or 
+## https://the-eye.eu/public/AI/pile_neox/ Change data_home to where you
+## store the pile_text_document.bin and pile_text_document.idx.
+data_home="/vc_data_blob/users/conglli/the_pile_public_merged_nopreprocessing"
+data_path="${data_home}/pile_text_document"
 
 vocab_path="gpt2-vocab.json"
 if [ ! -f "$vocab_path" ]; then
@@ -203,15 +199,12 @@ if [ ! -f "$merge_path" ]; then
 fi
 
 prescale_grad="true"
-jobname="gpt_${model_size}B_chunk_tok${train_tokens_in_billion}B"
+jobname="gpt_${model_size}B_tok${train_tokens_in_billion}B"
 jobname="${jobname}_lr${lr}_min${min_lr}_w${lr_warmup_tokens_in_million}M_d${lr_decay_tokens_in_billion}B_${lr_decay_style}"
 jobname="${jobname}_gbs${global_batch_size}_mbs${batch_size}_g${num_gpus}"
 if [[ $zero_stage -gt 0 ]]; then
     jobname="${jobname}_z${zero_stage}"
     prescale_grad="false"
-fi
-if [[ $sp_size -gt 1 ]]; then
-    jobname="${jobname}_sp${sp_size}"
 fi
 if [[ $mp_size -gt 1 ]]; then
     jobname="${jobname}_mp${mp_size}"
@@ -219,13 +212,15 @@ fi
 if [ "${no_pp}" = "false" ]; then
     jobname="${jobname}_pp${pp_size}"
 fi
-jobname="${jobname}_seed${seed}_rebase"
+jobname="${jobname}_seed${seed}_rebase_rope0.25"
 
 username=$(whoami)
-output_home="/users/PAS2312/yjhmitweb/ai_general/final_project_code/github/check_output_baseline"
+output_home="/blob/users/${username}/project/data_efficient_gpt"
 log_path="${output_home}/log/"
-checkpoint_path="${output_home}/ckpt"
-tensorboard_dir="${output_home}/tensorboard/"
+checkpoint_path="${output_home}/checkpoint/${jobname}"
+## Microsoft internal constraint: because tensorboard is logged by last rank,
+## it's better to put the path in NFS instead of Blob.
+tensorboard_dir="/vc_data/users/${username}/project/data_efficient_gpt/tensorboard/"
 tensorboard_path="${tensorboard_dir}${jobname}_${host}_${current_time}"
 mkdir -p ${log_path}
 mkdir -p ${checkpoint_path}
@@ -266,8 +261,6 @@ megatron_options=" \
     --eval-iters ${eval_iters} \
     --save-interval ${save_interval} \
     --weight-decay 0.1 \
-    --attention-dropout 0.0 \
-    --hidden-dropout 0.0 \
     --clip-grad 1.0 \
     --hysteresis 2 \
     --num-workers ${num_workers} \
@@ -276,10 +269,8 @@ megatron_options=" \
     --load ${checkpoint_path} \
     --save ${checkpoint_path} \
     --no-async-tensor-model-parallel-allreduce \
-    --use-flash-attn-v2 \
     --use-rotary-position-embeddings \
     --rotary-percent 0.25 \
-    --rotary-position-embeddings-theta 100000000 \
     --tensorboard-queue-size 1 \
     --log-timers-to-tensorboard \
     --log-batch-size-to-tensorboard \
@@ -340,4 +331,4 @@ if [[ $iteration -gt 0 ]]; then
     ds_ssh "echo $iteration_2 > $iteration_file_2"
 fi
 
-deepspeed --num_nodes 1 --num_gpus 4 --hostfile=/users/PAS2312/yjhmitweb/ai_general/final_project_code/github/baseline_hosts ${dir}/../../pretrain_gpt.py ${megatron_options} ${data_options} ${deepspeed_options}
+deepspeed ${dir}/../../pretrain_gpt.py ${megatron_options} ${data_options} ${deepspeed_options} &>> ${log_path}/${jobname}_${host}_${current_time}.log
