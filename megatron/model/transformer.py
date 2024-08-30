@@ -960,12 +960,6 @@ def launch_chunk_attention(args, config):
                             enable_offloading=args.ds_sequence_parallel_fpdt_offloading)
 
 
-def print_grad(grad):
-    if mpu.get_sequence_parallel_rank() == 2:
-        print(f"{grad}, {grad.shape}, bl grad")
-    input()
-
-
 class ParallelTransformerLayer(MegatronModule):
     """A single transformer layer.
 
