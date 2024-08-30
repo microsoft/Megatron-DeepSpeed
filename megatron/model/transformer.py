@@ -1,3 +1,4 @@
+# Copyright (C) 2024 Habana Labs, Ltd. an Intel Company.
 # Copyright (c) 2023, NVIDIA CORPORATION. All rights reserved.
 
 """Transformer."""
@@ -36,9 +37,12 @@ except ImportError:
 try:
     # FlashAttention (1.x)
     from flash_attn.flash_attn_interface import flash_attn_unpadded_func
-    from flash_attn.flash_attn_triton import flash_attn_func
 except ImportError:
     flash_attn_unpadded_func = None
+
+try:
+    from flash_attn.flash_attn_triton import flash_attn_func
+except ImportError:
     flash_attn_func = None
 
 try:
@@ -625,7 +629,12 @@ class ParallelAttention(MegatronModule):
 
             assert dist_attn_supported, 'Distributed attention is not supported in this DeepSpeed version'
             assert args.num_attention_heads % parallel_state.get_sequence_parallel_world_size() == 0
-            self.dist_attn = DistributedAttention(local_attn, parallel_state.get_sequence_parallel_group(),sp_stream=self.get_sp_stream())
+
+            self.dist_attn = DistributedAttention(
+                local_attn, 
+                parallel_state.get_sequence_parallel_group(), 
+                gather_idx=1 if args.use_flash_attn_v1 or args.use_flash_attn_v2 else 0,sp_stream=self.get_sp_stream()) 
+            # flash_attn_cuda assumes [b, s, nh, hd] layout, we need to make sure all2all gathers into the correct sequence dimension.
         else:
             if self.use_flash_attn:
                 self.core_attention_flash = local_attn
@@ -682,16 +691,22 @@ class ParallelAttention(MegatronModule):
         slen, batch, num_key_value_heads_per_partition, head_dim = hidden_states.shape
         if n_rep == 1:
             return hidden_states
-        hidden_states = hidden_states[:, :, :, None, :].expand(
-            slen, batch, num_key_value_heads_per_partition, n_rep, head_dim)
-        return hidden_states.reshape(slen, batch,
-                                     num_key_value_heads_per_partition * n_rep,
-                                     head_dim)
+        elif num_key_value_heads_per_partition == 1:
+            # If no of KV heads is 1 then just perform expand operation
+            # instead of unsqueeze, expand and reshape to match query states.
+            return hidden_states.expand(slen, batch, n_rep, head_dim)
+        else:
+            hidden_states = hidden_states[:, :, :, None, :].expand(
+                slen, batch, num_key_value_heads_per_partition, n_rep, head_dim)
+            return hidden_states.reshape(slen, batch,
+                                         num_key_value_heads_per_partition * n_rep,
+                                         head_dim)
                                      
     def split_tensor(self, mixed_x_layer):
-        query_layer = mixed_x_layer[:, :, :, :-2, :].reshape(mixed_x_layer.shape[:2] + (-1, self.hidden_size_per_attention_head))
-        key_layer = mixed_x_layer[:, :, :, -2, :]
-        value_layer = mixed_x_layer[:, :, :, -1, :]
+        query_layer, key_layer, value_layer = torch.split(mixed_x_layer, [self.num_key_value_groups, 1, 1], dim=-2)
+        query_layer = query_layer.reshape(mixed_x_layer.shape[:2] + (self.num_attention_heads_per_partition, self.hidden_size_per_attention_head))
+        key_layer = torch.squeeze(key_layer, -2)
+        value_layer = torch.squeeze(value_layer, -2)
 
         return query_layer, key_layer, value_layer
 
@@ -852,15 +867,17 @@ class ParallelAttention(MegatronModule):
             # value_layer = apply_rotary_pos_emb(value_layer, k_pos_emb)
 
         if self.enable_ds_sequence_parallel:
+            if self.ds_sp_overlap:
+                key_layer.done_event=fwd_key_layer_done_event
+                query_layer.done_event=fwd_query_layer_done_event
+            batch_dim_idx = 1
             if self.use_flash_attn:
                 if not self.use_flash_attn_triton:
                     query_layer, key_layer, value_layer = [rearrange(x, 's b ... -> b s ...').contiguous()
                             for x in (query_layer, key_layer, value_layer)]
-                if self.ds_sp_overlap:
-                    key_layer.done_event=fwd_key_layer_done_event
-                    query_layer.done_event=fwd_query_layer_done_event
-                
-                context_layer = self.dist_attn(query_layer, key_layer, value_layer)
+                batch_dim_idx = 0
+
+                context_layer = self.dist_attn(query_layer, key_layer, value_layer, batch_dim_idx)
 
                 if not self.use_flash_attn_triton:
                     context_layer = rearrange(context_layer, 'b s h d -> s b (h d)').contiguous()

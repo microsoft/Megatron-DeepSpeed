@@ -1,16 +1,30 @@
+# Copyright (C) 2024 Habana Labs, Ltd. an Intel Company.
 # Copyright (c) 2023, NVIDIA CORPORATION. All rights reserved.
 
 import pytest
 
 import torch
+import types
 
 from megatron.core.transformer.parallel_mlp import ParallelMLP
+from megatron.global_vars import set_args
 
 from deepspeed.accelerator import get_accelerator
 device_name = get_accelerator().device_name()
 
 @pytest.fixture
 def mlp(transformer_config):
+    mlp_args = types.SimpleNamespace(
+        swiglu=False,
+        openai_gelu=True,
+        onnx_safe=False,
+        bias_gelu_fusion=False,
+        transformer_impl="",
+        cache_fp8_weight=False,
+        fp8_interval=False,
+        cache_fp8_weight_fwd=False
+    )
+    set_args(mlp_args)
     return ParallelMLP(transformer_config)
 
 
