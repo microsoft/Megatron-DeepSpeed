@@ -59,11 +59,14 @@ class MixedFusedLayerNorm(torch.nn.Module):
             normalized_shape = (normalized_shape,)
         self.normalized_shape = torch.Size(normalized_shape)
         self.eps = eps
+        init_device = None
+        if get_accelerator().device_name() == 'hpu':
+            init_device = get_accelerator().current_device_name() 
         self.weight = Parameter(torch.empty(*normalized_shape,
-                                device=get_accelerator().current_device_name(),
+                                device=init_device,
                                 dtype=get_args().params_dtype))
         self.bias = Parameter(torch.empty(*normalized_shape,
-                              device=get_accelerator().current_device_name(),
+                              device=init_device,
                               dtype=get_args().params_dtype))
         self.reset_parameters()
         self.no_persist_layer_norm = no_persist_layer_norm
