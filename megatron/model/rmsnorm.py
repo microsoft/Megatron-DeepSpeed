@@ -12,8 +12,11 @@ class RMSNorm(torch.nn.Module):
     def __init__(self, dim: int, eps: float = 1e-6):
         super().__init__()
         self.eps = eps
+        init_device = None
+        if get_accelerator().device_name() == 'hpu':
+            init_device = get_accelerator().current_device_name() 
         self.weight = Parameter(torch.empty(dim,
-                                device=get_accelerator().current_device_name(),
+                                device=init_device,
                                 dtype=get_args().params_dtype))
         init.ones_(self.weight)
         setattr(self.weight, 'sequence_parallel', sequence_parallel)
