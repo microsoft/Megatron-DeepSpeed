@@ -350,8 +350,8 @@ def _warmup_jit_function():
 
     # Warmup fused bias+gelu
     seq_length = args.seq_length
-    if args.ds_sequence_parallel_fpdt:
-        seq_length = 8192
+    if args.ds_sequence_parallel_fpdt: # when using FPDT on extremly long sequence, we use the chunk length in FPDT to warmup instead of the ordinary SP sequence length which will cause OOM.
+        seq_length = args.ds_sequence_parallel_fpdt_chunk_size
     bias = torch.rand(args.ffn_hidden_size // args.tensor_model_parallel_size,
                       dtype=dtype, device='cuda')
     input = torch.rand((seq_length // args.ds_sequence_parallel_size, args.micro_batch_size,
