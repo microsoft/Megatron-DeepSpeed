@@ -13,7 +13,7 @@ else:
         from .fused_rmsnorm import RMSNorm
     else:
         from .rmsnorm import RMSNorm
-    from torch.nn import LayerNorm
+    from .layernorm import LayerNorm
 
 from .distributed import DistributedDataParallel
 from .bert_model import BertModel
