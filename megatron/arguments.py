@@ -1295,6 +1295,7 @@ def _add_data_args(parser):
                                 'GPT2BPETokenizer',
                                 'SentencePieceTokenizer',
                                 'GPTSentencePieceTokenizer',
+                                'Llama2Tokenizer',
                                 'HFTokenizer',
                                 'NullTokenizer'],
                        help='What type of tokenizer to use.')
