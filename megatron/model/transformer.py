@@ -984,7 +984,8 @@ class ParallelTransformerLayer(MegatronModule):
                     config.hidden_size,
                     eps=config.layernorm_epsilon)
         else:
-            self.input_layernorm = RMSNorm(config.hidden_size, config.layernorm_epsilon)
+            self.input_layernorm = RMSNorm(config.hidden_size, config.layernorm_epsilon,
+                                           sequence_parallel=config.sequence_parallel)
         # Self attention.
         self.self_attention = ParallelAttention(
             config,
@@ -1010,7 +1011,8 @@ class ParallelTransformerLayer(MegatronModule):
                     config.hidden_size,
                     eps=config.layernorm_epsilon)
         else:
-            self.post_attention_layernorm = RMSNorm(config.hidden_size, config.layernorm_epsilon)
+            self.post_attention_layernorm = RMSNorm(config.hidden_size, config.layernorm_epsilon,
+                                                    sequence_parallel=config.sequence_parallel)
             # Cross attention.
         if self.layer_type in (LayerType.decoder,
                                LayerType.retro_decoder,
@@ -1030,7 +1032,9 @@ class ParallelTransformerLayer(MegatronModule):
                     apply_layernorm_1p=args.apply_layernorm_1p,
                     mem_efficient_ln=args.mem_efficient_ln)
             else:
-                self.post_inter_attention_layernorm = RMSNorm(config.hidden_size, config.layernorm_epsilon)
+                self.post_inter_attention_layernorm = RMSNorm(config.hidden_size,
+                                                              config.layernorm_epsilon,
+                                                              sequence_parallel=config.sequence_parallel)
 
         # MLP
         self.num_experts = num_experts
@@ -1833,7 +1837,8 @@ class ParallelTransformer(MegatronModule):
                         config.hidden_size,
                         eps=config.layernorm_epsilon)
             else:
-                self.final_layernorm = RMSNorm(config.hidden_size, config.layernorm_epsilon)
+                self.final_layernorm = RMSNorm(config.hidden_size, config.layernorm_epsilon,
+                                               sequence_parallel=config.sequence_parallel)
 
     def _get_layer(self, layer_number):
         return self.layers[layer_number]

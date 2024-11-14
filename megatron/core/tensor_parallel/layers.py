@@ -1,3 +1,4 @@
+# Copyright (C) 2024 Habana Labs, Ltd. an Intel Company.
 # Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
 
 # Parts of the code here are adapted from PyTorch
@@ -287,6 +288,7 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
     @staticmethod
     @custom_bwd
     def backward(ctx, grad_output):
+        args = get_args()
         input, weight = ctx.saved_tensors
         use_bias = ctx.use_bias
 
@@ -369,16 +371,22 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
         #     grad_weight = None
         # else:
         #     grad_weight = grad_output.t().matmul(total_input)
+        
         if ctx.bwd_stream is not None:
+            # for sp overlap communication
             ctx.bwd_stream.wait_stream(get_accelerator().current_stream())
             with get_accelerator().stream(ctx.bwd_stream):
                 WeightGradStore.put(total_input, grad_output, weight, gradientUpdateFunction)
             ctx.bwd_stream.activation_buffer_list = [total_input, grad_output]
-        else:                
+            grad_weight = None
+        if args.enable_zbh1_pipeline:
+            from megatron.core.tensor_parallel.weight_grad_store import WeightGradStore
             WeightGradStore.put(total_input, grad_output, weight, gradientUpdateFunction)
+            grad_weight = None
+        else:
+            grad_weight = grad_output.t().matmul(total_input)
 
-        grad_weight = None
-        grad_bias = grad_output.sum(dim=0) if use_bias else None        
+        grad_bias = grad_output.sum(dim=0) if use_bias else None
 
         if ctx.sequence_parallel:
             handle.wait()
@@ -460,7 +468,8 @@ def linear_with_grad_accumulation_and_async_allreduce(
     ]
 
     if not linear_with_grad_accumulation_and_async_allreduce.warned:
-        if os.environ.get('CUDA_DEVICE_MAX_CONNECTIONS') != "1":
+        if get_accelerator().device_name() == "cuda" \
+            and os.environ.get('CUDA_DEVICE_MAX_CONNECTIONS') != "1":
             if sequence_parallel:
                 warnings.warn(
                     "When using sequence parallelism it is recommended to set the "
