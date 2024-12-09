@@ -2,8 +2,8 @@ DS_CONFIG=./examples_deepspeed/finetune_hf_llama/ds_config.json
 DATASET_PATH=./examples_deepspeed/finetune_hf_llama/alpaca_data.json
 # dataset link: https://github.com/tatsu-lab/stanford_alpaca/blob/main/alpaca_data.json
 
-# HF_LLAMA_PATH=/data/llama-2-7b-hf/
-weights link: https://huggingface.co/huggyllama/llama-7b
+HF_LLAMA_PATH=/data/llama-2-7b-hf/
+# weights link: https://huggingface.co/huggyllama/llama-7b
 
 MICRO_BATCH_SIZE=16
 GLOBAL_BATCH_SIZE=256
